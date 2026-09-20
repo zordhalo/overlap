@@ -182,13 +182,18 @@ describe('suggest', () => {
     expect(result.kind).toBe('slots');
     if (result.kind !== 'slots') return;
 
-    const concentratedHarm = result.slots.find((s) => s.start === localMs(zone, 2026, 6, 10, 8, 0));
-    const spreadInconvenience = result.slots.find((s) => s.start === localMs(zone, 2026, 6, 10, 18, 0));
+    // Found by score rather than by an exact start time: slot selection drops
+    // candidates that overlap an equal-scoring neighbour, so the surviving
+    // representative of each cost shape may be 07:45 rather than 08:00. The
+    // property under test is the ordering of the two cost shapes, not which
+    // quarter-hour happens to carry them.
+    const concentratedHarm = result.slots.find((s) => s.score === PENALTY.nearSleep);
+    const spreadInconvenience = result.slots.find((s) => s.score === members.length * PENALTY.offHours);
 
     expect(concentratedHarm).toBeDefined();
     expect(spreadInconvenience).toBeDefined();
-    expect(concentratedHarm!.score).toBe(PENALTY.nearSleep); // 25: only `victim` pays, everyone else is at work
-    expect(spreadInconvenience!.score).toBe(members.length * PENALTY.offHours); // 10: all five pay 2
+    // 25: only `victim` pays, everyone else is at work.
+    // 10: all five pay 2.
 
     // The whole point: mildly inconveniencing everyone must rank BELOW (come
     // earlier in the sorted list than) dragging one person to their limit.
@@ -244,5 +249,33 @@ describe('candidate grid alignment', () => {
     const result = suggest([member], { durationMinutes: 60, horizonDays: 1, from, stepMinutes: 30 });
     if (result.kind !== 'slots') throw new Error('expected slots');
     for (const slot of result.slots) expect(slot.start % (30 * 60 * 1000)).toBe(0);
+  });
+});
+
+describe('slot selection returns distinct options', () => {
+  it('never returns two slots that overlap each other', () => {
+    // A wide-open free window would otherwise yield a dense sweep of the
+    // 15-minute grid: ten "choices" that are really one.
+    const member = makeMember({ id: 'a', timezone: 'UTC', workStart: 0, workEnd: 1439 });
+    const from = Date.UTC(2026, 6, 10, 9, 0);
+    const result = suggest([member], { durationMinutes: 60, horizonDays: 3, from });
+    if (result.kind !== 'slots') throw new Error('expected slots');
+    expect(result.slots.length).toBeGreaterThan(1);
+    for (let i = 0; i < result.slots.length; i++) {
+      for (let j = i + 1; j < result.slots.length; j++) {
+        const a = result.slots[i]!;
+        const b = result.slots[j]!;
+        expect(a.start < b.end && b.start < a.end).toBe(false);
+      }
+    }
+  });
+
+  it('keeps rank order, because the UI puts its primary action on slots[0]', () => {
+    const member = makeMember({ id: 'a', timezone: 'UTC' });
+    const from = Date.UTC(2026, 6, 10, 0, 0);
+    const result = suggest([member], { durationMinutes: 45, horizonDays: 3, from });
+    if (result.kind !== 'slots') throw new Error('expected slots');
+    const scores = result.slots.map((s) => s.score);
+    expect([...scores].sort((a, b) => a - b)).toEqual(scores);
   });
 });

@@ -240,6 +240,7 @@ export function Globe({ members }: { members: Member[] }) {
     canvas.height = sizePx * dpr;
 
     let globe: Globe | null = null;
+    const settleFrames: number[] = [];
     try {
       globe = createGlobe(canvas, {
         devicePixelRatio: dpr,
@@ -251,6 +252,27 @@ export function Globe({ members }: { members: Member[] }) {
         ...globeTheme,
       });
       globeRef.current = globe;
+
+      // cobe 2.0.1 renders once, synchronously, inside createGlobe and then
+      // never again on its own. On a surface where no rAF loop runs (mobile,
+      // or reduced motion) that single frame is the whole render — and on
+      // mobile it landed before the sphere was drawable, leaving markers
+      // floating over an empty canvas. Nudging update() on the next two
+      // frames forces a redraw once layout and GL state have settled.
+      // Harmless where a loop is running: it just draws the same frame.
+      settleFrames.push(
+        requestAnimationFrame(() => {
+          globeRef.current?.update({ phi: rotationRef.current.phi, theta: rotationRef.current.theta });
+          settleFrames.push(
+            requestAnimationFrame(() => {
+              globeRef.current?.update({
+                phi: rotationRef.current.phi,
+                theta: rotationRef.current.theta,
+              });
+            }),
+          );
+        }),
+      );
     } catch {
       // Belt-and-suspenders: the probe above should catch the WebGL-missing
       // case, but createGlobe touching a detached/mocked canvas (a headless
@@ -261,6 +283,7 @@ export function Globe({ members }: { members: Member[] }) {
     }
 
     return () => {
+      for (const id of settleFrames) cancelAnimationFrame(id);
       globe?.destroy();
       globeRef.current = null;
     };
@@ -332,7 +355,16 @@ export function Globe({ members }: { members: Member[] }) {
   const summary = `Globe showing member locations as of ${asOf}. ${lit} in daylight, ${dark} in night.`;
 
   return (
-    <div ref={containerRef} className="relative aspect-square w-full">
+    // Capped on small screens. PLAN.md called for collapsing the globe behind
+    // a disclosure on mobile, for two stated reasons: the battery cost of a
+    // spinning sphere, and the dead space a full-width square leaves. The
+    // first no longer applies — auto-rotation is already off under 640px — and
+    // the second is solved by the cap without hiding the one graphic that
+    // shows a first-time visitor what this product is. Deviating from the
+    // plan's mechanism, not its intent.
+    <div
+      ref={containerRef}
+      className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-none">
       {webglOk ? (
         <canvas
           ref={canvasRef}

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Two circles and the lens where they meet: the overlap is the product.
+       Obsidian ground, graphite rings, the intersection in --pulse, the one
+       saturated colour this design system allows. -->
+  <rect width="32" height="32" fill="#101010"/>
+  <defs>
+    <clipPath id="a"><circle cx="12.5" cy="16" r="7.5"/></clipPath>
+  </defs>
+  <circle cx="12.5" cy="16" r="7.5" fill="none" stroke="#9c9c9c" stroke-width="1.5"/>
+  <circle cx="19.5" cy="16" r="7.5" fill="none" stroke="#9c9c9c" stroke-width="1.5"/>
+  <g clip-path="url(#a)"><circle cx="19.5" cy="16" r="7.5" fill="#98ff38"/></g>
+</svg>

@@ -13,7 +13,7 @@ import type { PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardE
 import { DateTime } from 'luxon';
 import { useClock } from '@/lib/time/clock';
 import { GhostButton, Meta, MemberTag } from '@/components/ui';
-import type { Member } from '@/lib/schedule/types';
+import type { Member, Slot } from '@/lib/schedule/types';
 import { clipToWindow, toPercent, type MemberBands, type Window } from './bands';
 
 /** Scrub + arrow-key granularity. Matches the engine's candidate-slot grid
@@ -31,9 +31,18 @@ type TimelineProps = {
   members: Member[];
   bands: MemberBands[];
   window: Window;
+  /**
+   * The suggested slots, drawn across every row as the one saturated element
+   * on the page. Without this the timeline shows each person's availability
+   * but never the thing the product exists to find — you would have to read
+   * the list beside it and mentally locate the answer on the strip yourself.
+   */
+  slots?: Slot[];
+  /** The slot the user picked, if any; drawn brighter than the rest. */
+  selected?: Slot | undefined;
 };
 
-export function Timeline({ members, bands, window }: TimelineProps) {
+export function Timeline({ members, bands, window, slots = [], selected }: TimelineProps) {
   const { focusInstant, isLive, focus, resumeLive } = useClock();
   const trackRef = useRef<HTMLDivElement>(null);
 
@@ -158,6 +167,41 @@ export function Timeline({ members, bands, window }: TimelineProps) {
             {members.map((m) => (
               <MemberRow key={m.id} bands={bandsByMember.get(m.id)} window={window} />
             ))}
+
+            {/* The answer. Every suggested slot painted across all rows in the
+                one saturated colour this design system allows, so the eye lands
+                on it before it reads anything. Non-interactive: picking happens
+                in the slot list, and this layer must not eat scrub gestures. */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 bottom-0"
+              style={{ top: TICK_ROW_HEIGHT }}
+            >
+              {slots.map((slot) => {
+                const box = clipToWindow({ start: slot.start, end: slot.end }, window);
+                if (!box) return null;
+                const isSelected =
+                  selected !== undefined &&
+                  selected.start === slot.start &&
+                  selected.end === slot.end;
+                const isBest = slots[0] === slot;
+                const prominent = isSelected || (selected === undefined && isBest);
+                return (
+                  <div
+                    key={`${slot.start}-${slot.end}`}
+                    className="absolute top-0 bottom-0"
+                    style={{
+                      left: `${box.left}%`,
+                      // A 45-minute slot across two days is a sliver; give it a
+                      // floor so the answer is never too thin to see.
+                      width: `max(3px, ${box.width}%)`,
+                      background: 'var(--band-overlap)',
+                      opacity: prominent ? 1 : 0.4,
+                    }}
+                  />
+                );
+              })}
+            </div>
 
             {/* Scrub surface + focus line, overlaid on every row at once so
                 dragging anywhere in the band area moves the shared clock. */}

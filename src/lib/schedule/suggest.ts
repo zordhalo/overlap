@@ -109,7 +109,29 @@ export function suggest(members: Member[], options: SuggestOptions): SuggestResu
     if (maxA !== maxB) return maxA - maxB;
     return a.variance - b.variance;
   });
-  return { kind: 'slots', slots: slots.slice(0, limit) };
+  // Return distinct OPTIONS, not a dense sweep of the grid.
+  //
+  // The candidate grid steps every 15 minutes, so a three-hour mutual free
+  // window produces a dozen slots that differ only by a quarter hour and carry
+  // identical costs. Handing someone "09:00, 09:15, 09:30, 09:45..." is a list
+  // of increments, not a list of choices — it makes the page look busy while
+  // actually offering one real option.
+  //
+  // Greedy selection over the already-sorted list: take the best remaining
+  // candidate, discard everything it overlaps, repeat. Because the list is
+  // sorted best-first, each pick is the best slot in its own free window, and
+  // what survives is genuinely separate opportunities.
+  const chosen: Slot[] = [];
+  for (const slot of slots) {
+    if (chosen.length >= limit) break;
+    const overlapsAPick = chosen.some((c) => slot.start < c.end && c.start < slot.end);
+    if (!overlapsAPick) chosen.push(slot);
+  }
+
+  // Deliberately NOT re-sorted chronologically. The list stays in rank order,
+  // because the UI puts its single primary action on slots[0] and that must be
+  // the best option, not merely the earliest one.
+  return { kind: 'slots', slots: chosen };
 }
 
 /**

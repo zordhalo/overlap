@@ -85,13 +85,19 @@ function CircleContent({
     <div
       className="grid grid-cols-1 gap-10
         lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-[auto_auto]
-        lg:[grid-template-areas:'slots_globe'_'timeline_globe']"
+        lg:[grid-template-areas:'slots_globe'_'timeline_timeline']"
     >
       <div className="lg:[grid-area:slots]">
         <Slots result={result} members={members} onPick={handlePick} selected={selected} />
       </div>
       <div className="lg:[grid-area:timeline]">
-        <Timeline members={members} bands={bands} window={timelineWindow} />
+        <Timeline
+          members={members}
+          bands={bands}
+          window={timelineWindow}
+          slots={result.kind === 'slots' ? result.slots : []}
+          selected={selected}
+        />
       </div>
       <div className="lg:[grid-area:globe]">
         <Globe members={members} />

@@ -29,16 +29,39 @@ function detectTimezone(): string {
   }
 }
 
+/** What a returning member already saved, so the form is an edit, not a
+ *  second sign-up. Minutes-from-midnight, as stored. */
+export type ExistingMember = {
+  name: string;
+  timezone: string;
+  sleepStart: number;
+  sleepEnd: number;
+  workStart: number;
+  workEnd: number;
+  hasCalendar: boolean;
+};
+
+/** Stored minutes-from-midnight back to the "HH:MM" an <input type=time> wants. */
+function toHHMM(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 export function JoinForm({
   circleSlug,
   zoneGroups,
+  existing,
 }: {
   circleSlug: string;
   zoneGroups: GroupedZones;
+  existing?: ExistingMember | undefined;
 }) {
   // Computed once via useState's lazy initializer, not a render-time call —
   // avoids recomputing (and re-diffing the <select>) on every re-render.
-  const [defaultZone] = useState(() => detectTimezone());
+  // A returning member's saved zone wins over browser detection: they may
+  // have deliberately set something other than where their browser is.
+  const [defaultZone] = useState(() => existing?.timezone ?? detectTimezone());
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   // The visitor's own zone may genuinely not be in the curated <select> list
@@ -56,7 +79,15 @@ export function JoinForm({
   return (
     <form action={boundAction} className="flex flex-col gap-8">
       <SlitFrame className="flex flex-col gap-4 p-6">
-        <Field id="name" name="name" label="Your name" type="text" required maxLength={100} />
+        <Field
+          id="name"
+          name="name"
+          label="Your name"
+          type="text"
+          required
+          maxLength={100}
+          defaultValue={existing?.name}
+        />
 
         <div className="flex flex-col gap-2">
           <label htmlFor="timezone" className="meta">
@@ -101,7 +132,7 @@ export function JoinForm({
               label="Asleep by"
               type="time"
               required
-              defaultValue={DEFAULT_SLEEP_START}
+              defaultValue={existing ? toHHMM(existing.sleepStart) : DEFAULT_SLEEP_START}
             />
             <Field
               id="sleepEnd"
@@ -109,7 +140,7 @@ export function JoinForm({
               label="Awake by"
               type="time"
               required
-              defaultValue={DEFAULT_SLEEP_END}
+              defaultValue={existing ? toHHMM(existing.sleepEnd) : DEFAULT_SLEEP_END}
             />
           </div>
         </div>
@@ -126,7 +157,7 @@ export function JoinForm({
               label="Start"
               type="time"
               required
-              defaultValue={DEFAULT_WORK_START}
+              defaultValue={existing ? toHHMM(existing.workStart) : DEFAULT_WORK_START}
             />
             <Field
               id="workEnd"
@@ -134,7 +165,7 @@ export function JoinForm({
               label="End"
               type="time"
               required
-              defaultValue={DEFAULT_WORK_END}
+              defaultValue={existing ? toHHMM(existing.workEnd) : DEFAULT_WORK_END}
             />
           </div>
         </div>
@@ -176,7 +207,7 @@ export function JoinForm({
       </SlitFrame>
 
       <div>
-        <Pill type="submit">Join circle</Pill>
+        <Pill type="submit">{existing ? 'Save changes' : 'Join circle'}</Pill>
       </div>
     </form>
   );

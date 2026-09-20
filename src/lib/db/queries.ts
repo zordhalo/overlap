@@ -118,6 +118,13 @@ export type MemberRecord = {
   color: string;
   lat: number | null;
   lng: number | null;
+  /**
+   * Whether a calendar is connected — deliberately a boolean, never the URL.
+   * A secret iCal URL is a credential, so it stays encrypted in the database
+   * and is decrypted only by the sync path. The UI needs to say "connected",
+   * which this answers without the value ever leaving the db layer.
+   */
+  hasCalendar: boolean;
   busy: { start: number; end: number }[];
 };
 
@@ -156,6 +163,7 @@ export async function getCircleBySlug(slug: string): Promise<CircleWithMembers |
         color: m.color,
         lat: m.lat,
         lng: m.lng,
+        hasCalendar: Boolean(m.icsUrlEncrypted),
         busy: busyRows.map((b) => ({ start: b.startsAt.getTime(), end: b.endsAt.getTime() })),
       };
     }),

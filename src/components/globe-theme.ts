@@ -53,31 +53,40 @@ export function hexToRgbFloat(hex: string): [number, number, number] {
 // --paper #101010 — used as the glow colour so any residual glow reads as
 // canvas, not a halo.
 const PAPER = hexToRgbFloat('#101010');
-// --rule #212121 — the graphite sphere body.
-const RULE = hexToRgbFloat('#212121');
+// The sphere body. --rule (#212121) was the first choice for a graphite
+// sphere, but rendered against the #101010 canvas the globe read as a dark
+// smudge rather than an object — the whole night hemisphere disappeared. Two
+// steps lighter keeps it unmistakably in the graphite family while giving the
+// sphere an edge you can actually see.
+const SPHERE = hexToRgbFloat('#4a4a4a');
 // --pulse #98ff38 — default marker colour; the globe agent overrides this
 // per-marker with the member's tint (see ui/MemberTag.tsx for the tint set).
 const PULSE = hexToRgbFloat('#98ff38');
 
 export const globeTheme: GlobeTheme = {
-  // `dark: 1` keeps the unlit hemisphere genuinely dark rather than merely
-  // dimmed, so the terminator reads as a hard edge between day and night.
-  dark: 1,
+  // Tuned against real screenshots across three passes. At 1.0 the night
+  // hemisphere merged into the #101010 canvas and the globe read as a smudge
+  // rather than an object. 0.55 keeps an unmistakable day/night difference
+  // while leaving the dark side legible as part of a sphere.
+  dark: 0.55,
   // Design review asked for `diffuse: 0` to kill cobe's default
-  // WebGL-tutorial sheen. Overridden to 0.55 during integration, because in
-  // cobe `diffuse` IS the directional light falloff — which is to say, it is
-  // the day/night terminator. At 0 the sphere renders flat and the globe
-  // loses the single piece of information it exists to carry.
+  // WebGL-tutorial sheen. Overridden during integration, because in cobe
+  // `diffuse` IS the directional light falloff — which is to say, it is the
+  // day/night terminator. At 0 the sphere renders flat and the globe loses
+  // the single piece of information it exists to carry.
   //
   // This is consistent with the review's actual principle: the objection was
   // to decoration that carries no information. Shading that shows you where
   // it is currently night is information. The halo was the real complaint,
   // and `glowColor` below still suppresses it.
-  diffuse: 0.55,
-  mapBrightness: 2.2,
+  diffuse: 1.15,
+  // Tuned against a real screenshot, not guessed. At 2.2 the globe read as a
+  // dark smudge on the #101010 canvas; the dot map IS this globe's only
+  // surface detail, so it has to carry the whole object.
+  mapBrightness: 6,
   mapSamples: 16000,
   scale: 1,
-  baseColor: RULE,
+  baseColor: SPHERE,
   markerColor: PULSE,
   glowColor: PAPER,
 };

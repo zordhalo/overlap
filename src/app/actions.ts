@@ -9,8 +9,8 @@
  */
 
 import { redirect } from 'next/navigation';
-import { addMember, createCircle, getCircleBySlug } from '@/lib/db/queries';
-import { setSessionMemberId } from '@/lib/session';
+import { addMember, createCircle, getCircleBySlug, updateMember } from '@/lib/db/queries';
+import { setSessionMemberId, getSessionMemberId } from '@/lib/session';
 import { isValidTimezone, zoneInfo } from '@/lib/zones';
 
 /** Fixed defaults for the one-screen create form, which asks only for a
@@ -102,6 +102,37 @@ export async function joinCircleAction(circleSlug: string, formData: FormData): 
   // doesn't cover still resolves via zones.ts's offset fallback, so this
   // never throws over an obscure-but-valid zone.
   const { lat, lng } = zoneInfo(timezone);
+
+  // Returning visitor: this browser already holds a session for a member of
+  // THIS circle, so the join page is an edit, not a second sign-up. Without
+  // this branch a returning member silently becomes a duplicate — and the
+  // join page explicitly promises "you can come back and change any of this
+  // later from the same browser", which would be a promise the code breaks.
+  //
+  // The cookie is only trusted after confirming the id is actually a member of
+  // this circle: a stale or hand-edited cookie must fall through to creating a
+  // member, never update someone else's row.
+  const sessionMemberId = await getSessionMemberId(circleSlug);
+  const existing = sessionMemberId
+    ? circle.members.find((m) => m.id === sessionMemberId)
+    : undefined;
+
+  if (existing) {
+    await updateMember(existing.id, {
+      name,
+      timezone,
+      sleepStart,
+      sleepEnd,
+      workStart,
+      workEnd,
+      lat,
+      lng,
+      // Leave the stored calendar alone when the field came back empty, so
+      // editing your sleep hours does not quietly disconnect your calendar.
+      ...(icsUrl ? { icsUrl } : {}),
+    });
+    redirect(`/c/${circleSlug}`);
+  }
 
   const { id } = await addMember(circle.id, {
     name,
