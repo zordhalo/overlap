@@ -196,17 +196,28 @@ Real rotation needs meeting history and is out of scope tonight.
 ```sql
 circle  (id, slug, name, created_at, duration_minutes, horizon_days)
 member  (id, circle_id, name, timezone, sleep_start, sleep_end,
-         work_start, work_end, ics_url, google_refresh_token, color, created_at)
-busy    (id, member_id, starts_at, ends_at, source, summary, synced_at)
+         work_start, work_end, ics_url_encrypted, tag, color,
+         lat, lng, created_at)
+busy    (id, member_id, starts_at, ends_at, source, synced_at)
 ```
 
-- `ics_url` and `google_refresh_token` are **encrypted at rest** (AES-256-GCM,
-  key from env). An iCal secret URL is a credential — it grants read access to
-  a person's whole calendar to anyone holding it.
-- `busy` is a cache, refreshed on load if `synced_at` is older than 15 minutes.
-- No email column. We are not sending email tonight, so we do not collect it.
+- **`busy` has no `summary` column, deliberately.** Overlap needs to know *that*
+  someone is busy, never *what* they are doing. A column that does not exist
+  cannot leak one co-founder's meeting titles to the rest of the circle, and no
+  feature reads it, so removing it costs nothing. Removing data beats guarding it.
+- `slug` is a **capability URL**: holding the link is the only authorisation, so
+  it is high-entropy `nanoid` (≥16 chars), never derived from the circle name,
+  and nothing anywhere lists circles or permits slug enumeration.
+- `ics_url_encrypted` is encrypted at rest with AES-256-GCM, fresh random 12-byte
+  IV per record, auth tag verified on decrypt. A secret iCal URL grants read
+  access to a person's whole calendar — it is a credential, not a setting.
+- Wall-clock fields are integers, local minutes from midnight (0..1439), with
+  `sleep_start > sleep_end` legal and normal.
+- `busy` is a cache with a TTL. **A failed calendar fetch keeps the previous
+  rows rather than clearing them**: losing busy data silently turns "busy" into
+  "free", which is the worst direction for a scheduler to fail in.
+- No email column. Nothing sends email tonight, so nothing collects an address.
 
----
 
 ## 6. Visual design — the runs-on.dev language
 
