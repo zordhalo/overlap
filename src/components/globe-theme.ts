@@ -16,6 +16,8 @@ export type GlobeTheme = {
   dark: number;
   diffuse: number;
   mapBrightness: number;
+  /** Floor applied to the map texture, i.e. how lit the ocean is. */
+  mapBaseBrightness: number;
   mapSamples: number;
   scale: number;
   baseColor: [number, number, number];
@@ -58,33 +60,52 @@ const PAPER = hexToRgbFloat('#101010');
 // smudge rather than an object — the whole night hemisphere disappeared. Two
 // steps lighter keeps it unmistakably in the graphite family while giving the
 // sphere an edge you can actually see.
-const SPHERE = hexToRgbFloat('#3f4450');
+const SPHERE = hexToRgbFloat('#e8eaf0');
 // --pulse #98ff38 — default marker colour; the globe agent overrides this
 // per-marker with the member's tint (see ui/MemberTag.tsx for the tint set).
 const PULSE = hexToRgbFloat('#98ff38');
 
 export const globeTheme: GlobeTheme = {
-  // Lowered to 0.35: at 0.55 the night hemisphere swallowed the continents on
-  // that side entirely, so half the globe carried no information at all. The
-  // terminator is still visible in the shading, it just no longer erases the
-  // land it falls across.
-  dark: 0.12,
-  // Design review asked for `diffuse: 0` to kill cobe's default
-  // WebGL-tutorial sheen. Overridden during integration, because in cobe
-  // `diffuse` IS the directional light falloff — which is to say, it is the
-  // day/night terminator. At 0 the sphere renders flat and the globe loses
-  // the single piece of information it exists to carry.
+  // `dark` is a POLARITY control, not a brightness one.
   //
-  // This is consistent with the review's actual principle: the objection was
-  // to decoration that carries no information. Shading that shows you where
-  // it is currently night is information. The halo was the real complaint,
-  // and `glowColor` below still suppresses it.
-  diffuse: 1.45,
-  // Tuned against a real screenshot, not guessed. At 2.2 the globe read as a
-  // dark smudge on the #101010 canvas; the dot map IS this globe's only
-  // surface detail, so it has to carry the whole object.
-  mapBrightness: 22,
-  mapSamples: 24000,
+  // cobe's sphere fragment is, in essence:
+  //   colour = baseColor * (mix((1 - q) * pow(i, .4), q, dark) + .1)
+  // where `q` is the map-dot intensity and `i` is depth toward the limb. At
+  // dark = 0 the land takes the (1 - q) branch and renders DARKER than the
+  // ocean; only at dark = 1 does land take `q` and render brighter. Every
+  // earlier attempt here fought that by pushing mapBrightness, which is why
+  // the continents kept coming out black on a pale sphere.
+  dark: 1,
+  // Ocean floor, and the single most important value here: it is what makes
+  // the sea a mid grey rather than near-black. Without it, dark: 1 leaves the
+  // ocean at baseColor * 0.1 and the globe is white continents floating on
+  // nothing — which only looks acceptable on the Atlantic face, and goes black
+  // the moment the Pacific rotates into view.
+  mapBaseBrightness: 0.3,
+  // With dark: 1 and the floor above, this puts land at about baseColor * 1.1
+  // (clipped to white) and ocean at about baseColor * 0.4. Tuned between two
+  // failures seen on real screenshots: at 0.2 the Pacific face went almost
+  // black, and at 0.45 the ocean dots reached land brightness and the
+  // coastlines disappeared into a uniform speckle.
+  mapBrightness: 1,
+  // Falloff toward the limb. Low enough that the continents stay white most
+  // of the way out rather than greying off halfway.
+  diffuse: 0.6,
+  // Density, and therefore how SOLID the sphere looks — not just detail.
+  //
+  // cobe only colours dot centres; between them the shader falls to
+  // baseColor * 0.1, which is near-black. So at a low sample count the globe
+  // reads as sparse specks on a dark ball no matter how the colours are set,
+  // and no amount of brightness tuning fixes it. Packing the lattice tighter
+  // is what makes the ocean read as a continuous grey surface with white
+  // landmasses on it.
+  //
+  // HARD CEILING near 32767. cobe's shader finds a point's lattice index by
+  // subtracting a fixed descending series that starts at 16384, so the largest
+  // index it can decompose is 16384+8192+...+1. Above that the decomposition
+  // silently fails and whole bands of the sphere render black — at 64000 the
+  // entire southern hemisphere disappeared. Do not raise this.
+  mapSamples: 32000,
   scale: 1,
   baseColor: SPHERE,
   markerColor: PULSE,

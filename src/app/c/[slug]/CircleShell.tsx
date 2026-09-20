@@ -28,6 +28,9 @@ type CircleShellProps = {
   timelineWindow: Window;
   result: SuggestResult;
   now: number;
+  /** The circle's persisted agreement, so a visitor arriving cold sees which
+   *  time was chosen rather than an unselected list. */
+  agreed?: { start: number; end: number } | null;
   /** The signed-in member's saved zone, so "your zone" means the zone they
    *  told us rather than wherever the browser happens to be. */
   viewerZone?: string | null;
@@ -41,6 +44,7 @@ export function CircleShell({
   result,
   now,
   viewerZone = null,
+  agreed = null,
 }: CircleShellProps) {
   return (
     <ClockProvider initialInstant={now}>
@@ -51,6 +55,7 @@ export function CircleShell({
         timelineWindow={timelineWindow}
         result={result}
         viewerZone={viewerZone}
+        agreed={agreed}
       />
     </ClockProvider>
   );
@@ -85,9 +90,16 @@ function CircleContent({
   timelineWindow,
   result,
   viewerZone,
+  agreed,
 }: Omit<CircleShellProps, 'now'>) {
   const { focus } = useClock();
-  const [selected, setSelected] = useState<Slot | undefined>(undefined);
+  // Seeded from the stored agreement, so the list shows the chosen time to
+  // everyone who opens the link — not only to whoever clicked it this session.
+  const [selected, setSelected] = useState<Slot | undefined>(() =>
+    agreed && result.kind === 'slots'
+      ? result.slots.find((s) => s.start === agreed.start && s.end === agreed.end)
+      : undefined,
+  );
   const [pending, startTransition] = useTransition();
 
   // Picking a slot is the moment the globe earns its place (PLAN.md §6):

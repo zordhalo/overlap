@@ -41,8 +41,10 @@ export function Slots({ result, members, onPick, selected }: SlotsProps) {
     );
   }
 
+  const anySelected = result.slots.some((slot) => isSameSlot(slot, selected));
+
   return (
-    <ol className="flex flex-col gap-6">
+    <ol className="flex flex-col gap-6" role="radiogroup" aria-label="Suggested meeting times">
       {result.slots.map((slot, rank) => (
         <li key={`${slot.start}-${slot.end}`}>
           <SlotRow
@@ -51,6 +53,7 @@ export function Slots({ result, members, onPick, selected }: SlotsProps) {
             members={members}
             membersById={membersById}
             selected={isSameSlot(slot, selected)}
+            anySelected={anySelected}
             onPick={onPick}
           />
         </li>
@@ -65,6 +68,7 @@ function SlotRow({
   members,
   membersById,
   selected,
+  anySelected,
   onPick,
 }: {
   slot: Slot;
@@ -72,13 +76,51 @@ function SlotRow({
   members: Member[];
   membersById: Map<string, Member>;
   selected: boolean;
+  anySelected: boolean;
   onPick: (slot: Slot) => void;
 }) {
   const isTop = rank === 0;
   const burden = burdenCopy(slot.costs, membersById);
 
+  // Exactly one row is ever the "live" one.
+  //
+  // Before this, rank 0 carried a filled pill permanently while every other
+  // row carried an identical ghost button, so the list read as several equally
+  // available actions and clicking one changed nothing about the others. There
+  // was no way to see which time was actually agreed. Now the state is
+  // singular and visible: the selected row is the one that is bright, labelled,
+  // and carries the page's single filled action. Until something is selected
+  // the best-ranked row holds that position, because a list of options with no
+  // recommended one is its own kind of unhelpful.
+  const isLive = selected || (!anySelected && isTop);
+
   return (
-    <SlitFrame bright={isTop || selected} className="flex flex-col gap-4 p-6">
+    <SlitFrame
+      bright={isLive}
+      className={`flex flex-col gap-4 p-6 transition-opacity ${
+        anySelected && !selected ? 'opacity-55' : ''
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        {/* A radio, not a button: choosing a time is picking one of a set, and
+            the control should say so to a screen reader as well as to the eye. */}
+        <span
+          aria-hidden="true"
+          className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border"
+          style={{
+            borderColor: selected ? 'var(--pulse)' : 'var(--edge)',
+            background: selected ? 'var(--pulse)' : 'transparent',
+          }}
+        >
+          {selected ? (
+            <span className="size-1.5 rounded-full" style={{ background: 'var(--paper)' }} />
+          ) : null}
+        </span>
+        <Meta as="div" style={selected ? { color: 'var(--pulse)' } : undefined}>
+          {selected ? 'Agreed' : isTop ? 'Best match' : `Option ${rank + 1}`}
+        </Meta>
+      </div>
+
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         {members.map((m) => (
           <div key={m.id} className="flex items-center gap-2">
@@ -97,10 +139,21 @@ function SlotRow({
       <Meta as="div">{burden}</Meta>
 
       <div>
-        {isTop ? (
-          <Pill onClick={() => onPick(slot)}>Add to calendar</Pill>
+        {selected ? (
+          // Ghost, not filled: once a time is agreed the banner above owns the
+          // page's one filled action, and two identical pills on screen was
+          // exactly the ambiguity that made this list feel like a multi-select.
+          <GhostButton onClick={() => onPick(slot)} aria-pressed>
+            Re-download calendar file
+          </GhostButton>
+        ) : isLive ? (
+          <Pill onClick={() => onPick(slot)} aria-pressed={false}>
+            Choose this time
+          </Pill>
         ) : (
-          <GhostButton onClick={() => onPick(slot)}>Use this time</GhostButton>
+          <GhostButton onClick={() => onPick(slot)} aria-pressed={false}>
+            Choose this time
+          </GhostButton>
         )}
       </div>
     </SlitFrame>

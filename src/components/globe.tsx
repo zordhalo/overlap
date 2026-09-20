@@ -44,7 +44,26 @@ const MOBILE_BREAKPOINT_PX = 640;
 /** Radians per frame the rotation eases toward its target. Small enough to
  *  read as a smooth drift rather than a snap, slow enough that a 30s clock
  *  tick (see `clock.tsx`'s `tickMs`) doesn't visibly whip the globe around. */
-const EASE_RATE = 0.04;
+/** Signed smallest angle from `a` to `b`, so comparisons near the +/-PI seam
+ *  do not read as a near-full-turn difference. */
+function shortestAngleTo(a: number, b: number): number {
+  return Math.atan2(Math.sin(b - a), Math.cos(b - a));
+}
+
+const EASE_RATE = 0.08;
+
+/**
+ * One full turn roughly every 90 seconds. Real time (a turn per 24h) is
+ * indistinguishable from stationary, and anything much faster reads as a
+ * loading spinner rather than a planet.
+ */
+const SPIN_RADIANS_PER_SECOND = (Math.PI * 2) / 90;
+
+/**
+ * How far the subsolar point must move before the globe re-aims at it. Above a
+ * clock tick (~0.002 rad per 30s), far below a slot pick (hours).
+ */
+const REORIENT_THRESHOLD_RADIANS = 0.15;
 
 /** Marker radius in cobe's own units (fraction of globe radius). Matches the
  *  scale cobe's own examples use for city-sized markers. */
@@ -162,6 +181,7 @@ export function Globe({
   // below rather than by `setState` (see file header).
   const rotationRef = useRef({ phi: phiForLongitude(subsolarLongitude(focusInstant)), theta: DEFAULT_THETA });
   const targetPhiRef = useRef(rotationRef.current.phi);
+  const reorientingRef = useRef(false);
   const draggingRef = useRef(false);
   const dragStartRef = useRef<{ x: number; y: number; phi: number; theta: number } | null>(null);
 
@@ -235,10 +255,26 @@ export function Globe({
   // discrete re-render itself: "frozen at the orientation for focusInstant"
   // per PLAN.md, not "animation that happens to be very slow."
   useEffect(() => {
-    targetPhiRef.current = phiForLongitude(subsolarLongitude(focusInstant));
+    const target = phiForLongitude(subsolarLongitude(focusInstant));
+
     if (reducedMotion || isMobile) {
-      rotationRef.current.phi = targetPhiRef.current;
+      // No loop is running, so orientation is set once, here.
+      rotationRef.current.phi = target;
       globeRef.current?.update({ phi: rotationRef.current.phi, theta: rotationRef.current.theta });
+      return;
+    }
+
+    // Only re-aim for a DELIBERATE jump, never for the clock ticking.
+    //
+    // The live clock advances every 30s, which moves the subsolar point by an
+    // eighth of a degree — invisible, but enough that continuously easing
+    // toward it fought the spin and, worse, yanked the globe back seconds
+    // after the user dragged it. Picking a slot moves it by hours. So a large
+    // delta re-aims and a small one is ignored, which lets a drag stand.
+    const delta = Math.abs(shortestAngleTo(rotationRef.current.phi, target));
+    if (delta > REORIENT_THRESHOLD_RADIANS) {
+      targetPhiRef.current = target;
+      reorientingRef.current = true;
     }
   }, [focusInstant, reducedMotion, isMobile]);
 
@@ -248,10 +284,37 @@ export function Globe({
   // entirely" rather than "keeps running but frozen."
   useEffect(() => {
     if (reducedMotion || isMobile) return;
+    let previous = performance.now();
     let frame = requestAnimationFrame(tick);
-    function tick() {
+
+    function tick(now: number) {
+      // Delta-timed so the spin runs at the same speed on a 60Hz laptop and a
+      // 120Hz phone, instead of twice as fast on the better screen.
+      const elapsedSeconds = Math.min((now - previous) / 1000, 0.1);
+      previous = now;
+
       if (!draggingRef.current) {
-        rotationRef.current.phi = lerpAngle(rotationRef.current.phi, targetPhiRef.current, EASE_RATE);
+        if (reorientingRef.current) {
+          // Easing to a moment the user chose. Finish, then hand back to the
+          // free spin rather than holding the orientation hostage.
+          rotationRef.current.phi = lerpAngle(
+            rotationRef.current.phi,
+            targetPhiRef.current,
+            EASE_RATE,
+          );
+          if (Math.abs(shortestAngleTo(rotationRef.current.phi, targetPhiRef.current)) < 0.01) {
+            reorientingRef.current = false;
+          }
+        } else {
+          // Free spin, in Earth's own direction.
+          //
+          // Earth turns eastward, so the longitude facing a fixed observer
+          // DEcreases over time — 12:00 UTC puts the sun over 0°, 13:00 puts
+          // it over 15°W. Since phi = -(lng + PI/2), a decreasing longitude is
+          // an increasing phi. Adding here is therefore the real direction,
+          // not an arbitrary sign that merely looked right.
+          rotationRef.current.phi += SPIN_RADIANS_PER_SECOND * elapsedSeconds;
+        }
         globeRef.current?.update({ phi: rotationRef.current.phi, theta: rotationRef.current.theta });
       }
       frame = requestAnimationFrame(tick);
@@ -421,7 +484,8 @@ export function Globe({
     // plan's mechanism, not its intent.
     <div
       ref={containerRef}
-      className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-none">
+      className="w-full">
+      <div className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-none">
       {webglOk ? (
         <canvas
           ref={canvasRef}
@@ -449,18 +513,47 @@ export function Globe({
           </ul>
         </div>
       )}
+      </div>
+
+      {/* Legend. The markers are the only place a member's colour appears
+          next to their actual position, and a coloured dot on a sphere is
+          undecodable on its own — you cannot tell whose it is. Tag and name
+          sit beside the swatch so identity never rests on hue, which is also
+          what keeps this readable for colour-blind viewers. */}
+      {memberStates.length > 0 ? (
+        <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+          {memberStates.map(({ member, localTime, daylight }) => (
+            <li key={member.id} className="flex items-center gap-2">
+              <span
+                aria-hidden="true"
+                className="inline-block size-2.5 shrink-0 rounded-full"
+                style={{ background: member.color }}
+              />
+              <span className="meta" style={{ color: member.color }}>
+                {member.tag}
+              </span>
+              <span className="text-sm text-(--ink)">{member.name}</span>
+              <span className="meta text-(--muted)">
+                {localTime} · {daylightWord(daylight)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {/* The information a WebGL canvas can never expose to a screen reader.
           Present unconditionally — not only in the no-WebGL branch — per
           PLAN.md's accessibility rule: the data must never live only inside
           the canvas. */}
-      <ul className="sr-only">
-        {memberStates.map(({ member, localTime, daylight }) => (
-          <li key={member.id}>
-            {member.name}: {localTime} local time, {daylightWord(daylight)}.
-          </li>
-        ))}
-      </ul>
+      {memberStates.length === 0 ? (
+        <ul className="sr-only">
+          {memberStates.map(({ member, localTime, daylight }) => (
+            <li key={member.id}>
+              {member.name}: {localTime} local time, {daylightWord(daylight)}.
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

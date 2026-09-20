@@ -216,6 +216,7 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
           result={result}
           now={now}
         viewerZone={currentMember?.timezone ?? null}
+        agreed={circle.chosen}
         />
       )}
     </main>
