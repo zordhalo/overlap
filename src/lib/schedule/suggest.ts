@@ -39,7 +39,19 @@ export function suggest(members: Member[], options: SuggestOptions): SuggestResu
   const stepMs = (options.stepMinutes ?? DEFAULT_STEP_MINUTES) * 60 * 1000;
   const durationMs = options.durationMinutes * 60 * 1000;
   const limit = options.limit ?? DEFAULT_LIMIT;
-  const horizon: Interval = { start: options.from, end: options.from + options.horizonDays * DAY_MS };
+
+  // Anchor the candidate grid to a clock boundary rather than to whatever
+  // instant the caller happened to pass. Callers pass Date.now(), so without
+  // this every suggestion reads "08:01" or "13:47" — technically a valid free
+  // window, and something nobody would ever propose as a meeting time.
+  //
+  // Rounding in UTC is sufficient: every IANA zone is offset from UTC by a
+  // whole number of 15-minute units (including the :30 and :45 zones), so a
+  // 15-minute UTC boundary is also a 15-minute boundary in every member's
+  // local wall clock. Rounding UP, never down, so a slot is never proposed in
+  // the past.
+  const gridStart = Math.ceil(options.from / stepMs) * stepMs;
+  const horizon: Interval = { start: gridStart, end: options.from + options.horizonDays * DAY_MS };
 
   // Padded a day either side so a member's sleep/work windows are complete
   // right up against the horizon's edges — both for hard exclusion and for

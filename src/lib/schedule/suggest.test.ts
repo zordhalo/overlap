@@ -218,3 +218,31 @@ describe('suggest', () => {
     expect(offHoursSlot!.costs[0]).toMatchObject({ penalty: 2, reason: 'off-hours' });
   });
 });
+
+describe('candidate grid alignment', () => {
+  it('anchors slots to a clock boundary even when `from` is not aligned', () => {
+    // A caller passing Date.now() lands on an arbitrary second. Without
+    // rounding, every suggestion reads like 08:01 — a real free window that
+    // nobody would ever propose out loud.
+    const member = makeMember({ id: 'a', timezone: 'UTC' });
+    const misaligned = Date.UTC(2026, 6, 10, 8, 1, 37, 412);
+    const result = suggest([member], { durationMinutes: 30, horizonDays: 2, from: misaligned });
+
+    expect(result.kind).toBe('slots');
+    if (result.kind !== 'slots') return;
+    expect(result.slots.length).toBeGreaterThan(0);
+    for (const slot of result.slots) {
+      expect(slot.start % (15 * 60 * 1000)).toBe(0);
+      // Rounded up, never down: no slot may start before the caller's `from`.
+      expect(slot.start).toBeGreaterThanOrEqual(misaligned);
+    }
+  });
+
+  it('respects a custom stepMinutes when aligning', () => {
+    const member = makeMember({ id: 'a', timezone: 'UTC' });
+    const from = Date.UTC(2026, 6, 10, 8, 7, 0);
+    const result = suggest([member], { durationMinutes: 60, horizonDays: 1, from, stepMinutes: 30 });
+    if (result.kind !== 'slots') throw new Error('expected slots');
+    for (const slot of result.slots) expect(slot.start % (30 * 60 * 1000)).toBe(0);
+  });
+});
