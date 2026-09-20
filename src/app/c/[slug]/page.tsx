@@ -1,11 +1,19 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getCircleBySlug, toScheduleMembers } from '@/lib/db/queries';
+import { after } from 'next/server';
+import {
+  getCircleBySlug,
+  getMemberIcsUrl,
+  isBusyStale,
+  syncMemberBusy,
+  toScheduleMembers,
+} from '@/lib/db/queries';
 import { getSessionMemberId } from '@/lib/session';
 import { offHoursIntervals, sleepIntervals, suggest } from '@/lib/schedule';
 import type { Member } from '@/lib/schedule/types';
 import type { MemberBands, Window } from '@/components/bands';
 import { GhostButton, Meta } from '@/components/ui';
+import { fetchIcsIntervals } from '@/lib/ics';
 import { CircleShell } from './CircleShell';
 import { ShareButton } from './ShareButton';
 
@@ -36,6 +44,41 @@ function computeBands(members: Member[], window: Window): MemberBands[] {
   }));
 }
 
+/**
+ * Refresh stale calendars AFTER the response is sent.
+ *
+ * Awaiting this inline would add up to the 8s fetch timeout to the page load,
+ * per stale member, on a page whose whole promise is that it already knows the
+ * answer. `after()` runs the work once the response has been streamed, so the
+ * visitor waits for nothing and the next load sees fresh data.
+ *
+ * Deliberately best-effort: every failure is swallowed here rather than
+ * surfaced, because `syncMemberBusy` already guarantees the important
+ * property — a failed or timed-out fetch leaves the previous busy rows
+ * untouched instead of clearing them. Losing busy data would silently turn
+ * "busy" into "free", which is the worst direction for a scheduler to fail in.
+ * A stale calendar is a much smaller problem than a wrong one.
+ */
+function scheduleCalendarRefresh(members: { id: string; hasCalendar: boolean }[], window: { from: number; to: number }): void {
+  const withCalendars = members.filter((m) => m.hasCalendar);
+  if (withCalendars.length === 0) return;
+
+  after(async () => {
+    await Promise.allSettled(
+      withCalendars.map(async (m) => {
+        if (!(await isBusyStale(m.id))) return;
+        const url = await getMemberIcsUrl(m.id);
+        if (!url) return;
+        await syncMemberBusy(
+          m.id,
+          (signal) => fetchIcsIntervals(url, { from: window.from, to: window.to, signal }),
+          'ics',
+        );
+      }),
+    );
+  });
+}
+
 export default async function CirclePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const circle = await getCircleBySlug(slug);
@@ -54,6 +97,14 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
 
   const timelineWindow: Window = { from: now, to: now + TIMELINE_WINDOW_DAYS * DAY_MS };
   const bands = computeBands(members, timelineWindow);
+
+  // Fire-and-forget; see scheduleCalendarRefresh. Uses the full search
+  // horizon, not the narrower visual window, so the cache covers everything
+  // suggest() will look at.
+  scheduleCalendarRefresh(circle.members, {
+    from: now,
+    to: now + circle.horizonDays * DAY_MS,
+  });
 
   const sessionMemberId = await getSessionMemberId(slug);
   const currentMember = members.find((m) => m.id === sessionMemberId);
