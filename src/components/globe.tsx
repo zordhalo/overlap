@@ -483,9 +483,15 @@ export function Globe({
     // shows a first-time visitor what this product is. Deviating from the
     // plan's mechanism, not its intent.
     <div
-      ref={containerRef}
       className="w-full">
-      <div className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-none">
+      {/* The observer measures THIS box, not the full-width wrapper. It used to
+          sit on the wrapper, so on mobile the canvas was sized to ~358px while
+          the visible square is capped at 280 — the globe overflowed its box and
+          rendered on top of the legend below it. */}
+      <div
+        ref={containerRef}
+        className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-none"
+      >
       {webglOk ? (
         <canvas
           ref={canvasRef}

@@ -34,13 +34,21 @@ silently stop syncing a week later. There are three ways out:
 | **In production** | Anyone | Sensitive scopes need Google's verification review first. |
 | Stay in **Testing** | Up to 100 named test users | Free and instant, but everyone reconnects weekly. |
 
+**For Overlap specifically, take the middle row.** The single scope is
+non-sensitive (confirmed below), so publishing needs no review and is the only
+option that does not quietly break in a week.
+
 Testing mode is fine for trying it with two or three people this week. It is
 not something to leave running.
 
-The Cloud Console labels each scope **non-sensitive**, **sensitive**, or
-**restricted** next to it when you add it. That label decides whether going to
-production needs a review, so read it rather than assuming — the agent prompt
-below is written to report it back to you.
+**Confirmed, 2026-09-20: `calendar.freebusy` is classified NON-SENSITIVE.**
+It appears under "Your non-sensitive scopes" with the sensitive list empty.
+
+That is the good outcome, and it changes the recommendation above: because the
+only scope requested is non-sensitive, **this app can be switched to "In
+production" without Google's verification review** — which removes the 7-day
+refresh-token revocation entirely. There is no reason to leave it in Testing
+once you have confirmed the flow works.
 
 ---
 
@@ -100,12 +108,17 @@ chat. Report it only in your final message to me.**
 8. Create the client: **APIs & Services → Credentials → Create credentials →
    OAuth client ID**. Application type: **Web application**. Name: `Overlap web`.
 
-9. Under **Authorised redirect URIs**, add these two, exactly as written,
+9. Under **Authorised redirect URIs**, add these three, exactly as written,
    with no trailing slash:
    ```
+   https://overlap.runs-on.dev/api/google/callback
    https://overlap-advancelabs.vercel.app/api/google/callback
    http://localhost:3000/api/google/callback
    ```
+   The first is the one that matters: it is the address people actually use.
+   The redirect URI Overlap sends is derived from the origin of the request,
+   so a visitor on `overlap.runs-on.dev` triggers a callback to that host, and
+   Google refuses any host not listed here.
    These must match character for character or the OAuth flow fails with
    `redirect_uri_mismatch`. Do not add anything to "Authorised JavaScript
    origins" — it is not needed for a server-side flow.
@@ -154,3 +167,40 @@ rather than immediately, because the sync runs after the response is sent.
 | `access_blocked` / "app not verified" | The signing-in account is not in the test-user list. |
 | Connected, then stopped working a week later | The 7-day Testing-mode refresh-token revocation. See the table above. |
 | `?calendar=no-refresh-token` | Google returned no refresh token. Overlap always sends `prompt=consent` so this should not happen; check the client is a **Web application** type. |
+
+
+---
+
+## Follow-up: add the real domain
+
+The first setup run registered redirect URIs for `overlap-advancelabs.vercel.app`,
+which was the address at the time. The app now lives at `overlap.runs-on.dev`,
+and Google rejects any callback host that is not registered. Hand this to a
+browser agent:
+
+---
+
+Go to `https://console.cloud.google.com/auth/clients` with the **Overlap**
+project selected in the top bar. Open the OAuth client named **Overlap web**.
+
+Under **Authorised redirect URIs**, add one more entry, exactly as written,
+with no trailing slash:
+
+```
+https://overlap.runs-on.dev/api/google/callback
+```
+
+Leave the two existing URIs in place. Save.
+
+Then go to `https://console.cloud.google.com/auth/audience`. The publishing
+status will say **Testing**. Click **Publish app** and confirm.
+
+This is safe to do without a verification review: the only scope this app
+requests is `calendar.freebusy`, which Google classifies as non-sensitive.
+Publishing is what stops Google revoking every connected calendar after seven
+days.
+
+Report back: the full list of redirect URIs on the client after saving, and
+the publishing status after the change.
+
+---

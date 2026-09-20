@@ -56,27 +56,61 @@ export default function HomePage() {
   const members = demoMembers(now);
   const timelineWindow: Window = { from: now, to: now + DEMO_WINDOW_DAYS * DAY_MS };
   const bands = computeBands(members, timelineWindow);
-  const result = suggest(members, { durationMinutes: 45, horizonDays: 5, from: now, limit: 4 });
+  const result = suggest(members, { durationMinutes: 45, horizonDays: 5, from: now, limit: 6 });
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-16 px-6 py-16">
-      <section className="flex max-w-3xl flex-col gap-4">
-        <Meta as="div">Overlap</Meta>
-        <h1 className="text-(length:--text-display) leading-(--text-display--line-height) tracking-(--text-display--letter-spacing) text-(--ink)">
-          The cost was never the meeting.
-        </h1>
-        <p className="max-w-prose text-(length:--text-body) text-(--muted)">
-          It was the negotiation about when. Share one link. Everyone lands on a page that already
-          knows the answer — a globe of where your people are, and the times nobody has to lose
-          sleep for.
-        </p>
+    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-20 px-6 py-16">
+      {/* Hero and the one action, together.
+          The create form used to sit at the very bottom, under the demo and
+          the value props, so acting meant scrolling past the entire page. A
+          landing page for a tool with a single verb should let you do that
+          verb immediately; the demo below is then evidence, not a toll. */}
+      <section className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:items-center">
+        <div className="flex flex-col gap-5">
+          <Meta as="div">Overlap</Meta>
+          <h1 className="text-(length:--text-display) leading-(--text-display--line-height) tracking-(--text-display--letter-spacing) text-(--ink)">
+            The cost was never the meeting.
+          </h1>
+          <p className="max-w-prose text-(length:--text-body) text-(--muted)">
+            It was the negotiation about when. Share one link. Everyone sets their hours once, and
+            the page already knows when you can all meet.
+          </p>
+        </div>
+
+        <SlitFrame className="flex flex-col gap-4 p-6">
+          <form action={createCircleAction} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <label htmlFor="name" className="meta">
+                Name your circle
+              </label>
+              <input
+                id="name"
+                name="name"
+                type="text"
+                required
+                maxLength={100}
+                placeholder="Co-founders"
+                className="slit-input rounded-md px-3 py-2 text-(--ink)"
+              />
+            </div>
+            <div>
+              <Pill type="submit">Create a circle</Pill>
+            </div>
+            <Meta as="p" className="normal-case tracking-normal text-(--muted)">
+              No account, no invites. Whoever holds the link sets a name, a timezone, and when they
+              sleep. That is the whole setup.
+            </Meta>
+          </form>
+        </SlitFrame>
       </section>
 
+      {/* The demo, framed as what it is: a real circle, not a screenshot. */}
       <section className="flex flex-col gap-5">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <Meta as="h2">A circle, running right now</Meta>
           <Meta as="p" className="normal-case tracking-normal text-(--muted)">
-            Three example people. Scrub the timeline, or pick a time and watch the globe turn to it.
+            Three example people in Toronto, London and Bengaluru. Pick a time and watch the globe
+            turn to it.
           </Meta>
         </div>
         <DemoShowcase
@@ -97,38 +131,6 @@ export default function HomePage() {
         ))}
       </section>
 
-      <section className="flex flex-col gap-4">
-        <SlitFrame className="flex max-w-xl flex-col gap-4 p-6">
-          <form action={createCircleAction} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <label htmlFor="name" className="meta">
-                Circle name
-              </label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                required
-                maxLength={100}
-                placeholder="Co-founders"
-                className="slit-input rounded-md px-3 py-2 text-(--ink)"
-              />
-            </div>
-            <div>
-              <Pill type="submit">Create a circle</Pill>
-            </div>
-          </form>
-        </SlitFrame>
-
-        <Meta as="p" className="max-w-prose normal-case tracking-normal text-(--muted)">
-          No account. Whoever holds the link can join — set a name, a timezone, and when you sleep,
-          and Overlap does the rest.
-        </Meta>
-      </section>
-
-      {/* Credit where the address comes from. Overlap lives on a claimed name
-          from a subdomain registry rather than on a *.vercel.app URL, and
-          saying so is both honest and the reason the registry exists. */}
       <footer className="slit-top pt-6">
         <Meta as="p" className="normal-case tracking-normal text-(--muted)">
           Open source, AGPL-3.0 —{' '}
@@ -143,10 +145,7 @@ export default function HomePage() {
             runs-on.dev
           </a>
           , a subdomain registry by{' '}
-          <a
-            href="https://advancelabs.dev"
-            className="text-(--ink) underline underline-offset-4"
-          >
+          <a href="https://advancelabs.dev" className="text-(--ink) underline underline-offset-4">
             Advance Labs
           </a>
           .
