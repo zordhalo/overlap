@@ -128,12 +128,16 @@ export type MemberRecord = {
   busy: { start: number; end: number }[];
 };
 
+/** The time a circle agreed on. Null until somebody picks one. */
+export type ChosenSlot = { start: number; end: number; byMemberId: string | null };
+
 export type CircleWithMembers = {
   id: string;
   slug: string;
   name: string;
   durationMinutes: number;
   horizonDays: number;
+  chosen: ChosenSlot | null;
   members: MemberRecord[];
 };
 
@@ -145,6 +149,11 @@ export type CircleWithMembers = {
 export async function getCircleBySlug(slug: string): Promise<CircleWithMembers | null> {
   const circleRow = await db.query.circle.findFirst({ where: eq(circle.slug, slug) });
   if (!circleRow) return null;
+
+  const chosen: ChosenSlot | null =
+    circleRow.chosenStart !== null && circleRow.chosenEnd !== null
+      ? { start: circleRow.chosenStart, end: circleRow.chosenEnd, byMemberId: circleRow.chosenBy }
+      : null;
 
   const memberRows = await db.query.member.findMany({ where: eq(member.circleId, circleRow.id) });
   const members: MemberRecord[] = await Promise.all(
@@ -175,6 +184,7 @@ export async function getCircleBySlug(slug: string): Promise<CircleWithMembers |
     name: circleRow.name,
     durationMinutes: circleRow.durationMinutes,
     horizonDays: circleRow.horizonDays,
+    chosen,
     members,
   };
 }
@@ -413,4 +423,39 @@ export async function assignNextTagAndColor(circleId: string): Promise<{ tag: st
   const usedTags = new Set(existing.map((m) => m.tag));
   const next = TAG_PALETTE.find((entry) => !usedTags.has(entry.tag));
   return next ?? TAG_PALETTE[existing.length % TAG_PALETTE.length]!;
+}
+
+
+/**
+ * Record the time a circle agreed on, so the decision is visible to everyone
+ * holding the link rather than living in one person's downloads folder.
+ *
+ * `memberId` is verified to belong to this circle by the caller (it comes from
+ * a cookie), and stored only for attribution — anyone in the circle may change
+ * the choice, because a group of three co-founders does not need a permissions
+ * model, and one would be the wrong answer to a social problem.
+ */
+export async function setChosenSlot(
+  circleId: string,
+  memberId: string | null,
+  start: number,
+  end: number,
+): Promise<void> {
+  assertId(circleId, 'circleId');
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    throw new Error(`Invalid chosen slot: ${start}..${end}`);
+  }
+  await db
+    .update(circle)
+    .set({ chosenStart: start, chosenEnd: end, chosenBy: memberId, chosenAt: new Date() })
+    .where(eq(circle.id, circleId));
+}
+
+/** Un-decide. Returns the circle to "no time agreed yet". */
+export async function clearChosenSlot(circleId: string): Promise<void> {
+  assertId(circleId, 'circleId');
+  await db
+    .update(circle)
+    .set({ chosenStart: null, chosenEnd: null, chosenBy: null, chosenAt: null })
+    .where(eq(circle.id, circleId));
 }

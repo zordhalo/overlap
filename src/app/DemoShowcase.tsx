@@ -26,17 +26,26 @@ type Props = {
   timelineWindow: Window;
   result: SuggestResult;
   now: number;
+  /** The signed-in member's saved zone, so "your zone" means the zone they
+   *  told us rather than wherever the browser happens to be. */
+  viewerZone?: string | null;
 };
 
-export function DemoShowcase({ members, bands, timelineWindow, result, now }: Props) {
+export function DemoShowcase({ members, bands, timelineWindow, result, now, viewerZone = null }: Props) {
   return (
     <ClockProvider initialInstant={now}>
-      <DemoContent members={members} bands={bands} timelineWindow={timelineWindow} result={result} />
+      <DemoContent
+        members={members}
+        bands={bands}
+        timelineWindow={timelineWindow}
+        result={result}
+        viewerZone={viewerZone}
+      />
     </ClockProvider>
   );
 }
 
-function DemoContent({ members, bands, timelineWindow, result }: Omit<Props, 'now'>) {
+function DemoContent({ members, bands, timelineWindow, result, viewerZone }: Omit<Props, 'now'>) {
   const { focus } = useClock();
   const [selected, setSelected] = useState<Slot | undefined>(undefined);
 
@@ -61,10 +70,11 @@ function DemoContent({ members, bands, timelineWindow, result }: Omit<Props, 'no
           window={timelineWindow}
           slots={result.kind === 'slots' ? result.slots : []}
           selected={selected}
+          viewerZone={viewerZone}
         />
       </div>
       <div className="lg:[grid-area:globe]">
-        <Globe members={members} />
+        <Globe members={members} viewerZone={viewerZone} />
       </div>
     </div>
   );

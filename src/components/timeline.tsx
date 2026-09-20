@@ -8,7 +8,7 @@
  * "the current time."
  */
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { DateTime } from 'luxon';
 import { useClock } from '@/lib/time/clock';
@@ -40,9 +40,23 @@ type TimelineProps = {
   slots?: Slot[];
   /** The slot the user picked, if any; drawn brighter than the rest. */
   selected?: Slot | undefined;
+  /**
+   * The zone to label days and times in. Pass the signed-in member's saved
+   * timezone: "your zone" should mean the zone you told us, not wherever your
+   * laptop happens to be. Null for a visitor who is not a member, which falls
+   * back to the browser's zone after mount.
+   */
+  viewerZone?: string | null;
 };
 
-export function Timeline({ members, bands, window, slots = [], selected }: TimelineProps) {
+export function Timeline({
+  members,
+  bands,
+  window,
+  slots = [],
+  selected,
+  viewerZone: viewerZoneProp = null,
+}: TimelineProps) {
   const { focusInstant, isLive, focus, resumeLive } = useClock();
   const trackRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +69,21 @@ export function Timeline({ members, bands, window, slots = [], selected }: Timel
   // The viewer's own zone, for day labels — PLAN.md is explicit that days
   // are labelled in the *viewer's* zone, and that the UI must say so rather
   // than leave it implicit.
-  const viewerZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
+  // Resolved AFTER mount, never during render.
+  //
+  // Reading Intl.DateTimeFormat().resolvedOptions() inline looks harmless but
+  // this is a client component that still server-renders: the server resolves
+  // UTC, the browser resolves the visitor's real zone, and React hydration
+  // mismatches (#418) on every load. On a page whose whole subject is what
+  // time it is, that briefly paints the wrong time.
+  //
+  // A member's own saved zone takes precedence over the browser's, so the
+  // header and the member row cannot disagree about "you".
+  const [browserZone, setBrowserZone] = useState<string | null>(null);
+  useEffect(() => {
+    setBrowserZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  }, []);
+  const viewerZone = viewerZoneProp ?? browserZone ?? 'UTC';
   const ticks = useMemo(() => buildTicks(window, viewerZone), [window, viewerZone]);
   const focusPercent = clampPercent(toPercent(focusInstant, window));
 
@@ -124,7 +152,10 @@ export function Timeline({ members, bands, window, slots = [], selected }: Timel
   return (
     <div className="w-full">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <Meta as="div">Days shown in your zone · {viewerZone}</Meta>
+        <Meta as="div">
+          {viewerZoneProp ? 'Days shown in your zone' : 'Days shown in this browser\u2019s zone'} ·{' '}
+          {viewerZone}
+        </Meta>
         {!isLive && (
           <GhostButton onClick={resumeLive} aria-label="Jump back to now">
             ● now

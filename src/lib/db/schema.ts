@@ -10,6 +10,7 @@ import {
   timestamp,
   uuid,
   doublePrecision,
+  bigint,
   uniqueIndex,
   check,
 } from 'drizzle-orm/pg-core';
@@ -28,6 +29,19 @@ export const circle = pgTable('circle', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   durationMinutes: integer('duration_minutes').notNull(),
   horizonDays: integer('horizon_days').notNull(),
+  /**
+   * The time the circle agreed on, if any. Epoch ms.
+   *
+   * This lives on the circle rather than on a member deliberately: a decision
+   * that only one person can see is not a decision, and picking a slot used to
+   * produce nothing but a private calendar file — leaving the group to settle
+   * "so, Tuesday 3pm?" in chat, which is exactly the negotiation this product
+   * exists to end.
+   */
+  chosenStart: bigint('chosen_start', { mode: 'number' }),
+  chosenEnd: bigint('chosen_end', { mode: 'number' }),
+  chosenBy: uuid('chosen_by'),
+  chosenAt: timestamp('chosen_at', { withTimezone: true }),
 }, (t) => [
   uniqueIndex('circle_slug_idx').on(t.slug),
   check('circle_duration_positive', sql`${t.durationMinutes} > 0 AND ${t.durationMinutes} <= 1440`),

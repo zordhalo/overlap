@@ -9,8 +9,20 @@
  */
 
 import { redirect } from 'next/navigation';
-import { addMember, createCircle, getCircleBySlug, updateMember } from '@/lib/db/queries';
-import { setSessionMemberId, getSessionMemberId } from '@/lib/session';
+import { revalidatePath } from 'next/cache';
+import {
+  addMember,
+  clearChosenSlot,
+  createCircle,
+  getCircleBySlug,
+  setChosenSlot,
+  updateMember,
+} from '@/lib/db/queries';
+import {
+  clearSessionMemberId,
+  getSessionMemberId,
+  setSessionMemberId,
+} from '@/lib/session';
 import { isValidTimezone, zoneInfo } from '@/lib/zones';
 
 /** Fixed defaults for the one-screen create form, which asks only for a
@@ -148,4 +160,54 @@ export async function joinCircleAction(circleSlug: string, formData: FormData): 
 
   await setSessionMemberId(circleSlug, id);
   redirect(`/c/${circleSlug}`);
+}
+
+
+/**
+ * Agree on a time, for everyone.
+ *
+ * Picking a slot used to produce only a private .ics, which left the group to
+ * settle "so, Tuesday 3pm?" in chat — the exact negotiation this product
+ * exists to end. Writing the choice to the circle makes it part of what the
+ * link shows, so sharing the link IS telling people the time.
+ *
+ * Any member may set or change it. Three co-founders do not need a permissions
+ * model, and adding one would be the wrong answer to a social problem.
+ */
+export async function chooseSlotAction(
+  circleSlug: string,
+  start: number,
+  end: number,
+): Promise<void> {
+  const circle = await getCircleBySlug(circleSlug);
+  if (!circle) throw new Error('That circle does not exist.');
+
+  // Attribution only, and only if the cookie really names a member of THIS
+  // circle. A stale or forged cookie records an anonymous choice rather than
+  // crediting — or impersonating — somebody else.
+  const sessionMemberId = await getSessionMemberId(circleSlug);
+  const byMemberId = circle.members.some((m) => m.id === sessionMemberId)
+    ? sessionMemberId
+    : null;
+
+  await setChosenSlot(circle.id, byMemberId, start, end);
+  revalidatePath(`/c/${circleSlug}`);
+}
+
+/** Reopen the question. */
+export async function clearChosenAction(circleSlug: string): Promise<void> {
+  const circle = await getCircleBySlug(circleSlug);
+  if (!circle) throw new Error('That circle does not exist.');
+  await clearChosenSlot(circle.id);
+  revalidatePath(`/c/${circleSlug}`);
+}
+
+/**
+ * Forget who this browser is for this circle, so one person can set up several
+ * members from one browser — the first thing anyone does when they want to see
+ * what the link will look like before sending it to three colleagues.
+ */
+export async function switchMemberAction(circleSlug: string): Promise<void> {
+  await clearSessionMemberId(circleSlug);
+  redirect(`/c/${circleSlug}/join`);
 }

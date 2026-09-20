@@ -139,7 +139,14 @@ function daylightWord(daylight: boolean | null): string {
   return daylight ? 'daylight' : 'night';
 }
 
-export function Globe({ members }: { members: Member[] }) {
+export function Globe({
+  members,
+  viewerZone = null,
+}: {
+  members: Member[];
+  /** The signed-in member's saved zone; null falls back to UTC for the caption. */
+  viewerZone?: string | null;
+}) {
   const { focusInstant } = useClock();
   const reducedMotion = usePrefersReducedMotion();
   const isMobile = useIsMobile();
@@ -349,9 +356,15 @@ export function Globe({ members }: { members: Member[] }) {
 
   const lit = memberStates.filter((s) => s.daylight === true).length;
   const dark = memberStates.filter((s) => s.daylight === false).length;
-  const asOf = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
-    new Date(focusInstant),
-  );
+  // Formatted in the viewer's own zone. Left to the runtime default, the
+  // server renders this in UTC and the browser in local time, so the caption
+  // and the member row underneath it disagreed about what time it is for the
+  // same person — on a page whose entire subject is what time it is.
+  const asOf = new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: viewerZone ?? 'UTC',
+  }).format(new Date(focusInstant));
   const summary = `Globe showing member locations as of ${asOf}. ${lit} in daylight, ${dark} in night.`;
 
   return (

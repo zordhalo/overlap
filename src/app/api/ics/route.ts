@@ -32,15 +32,15 @@ function isFiniteInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value);
 }
 
-export async function POST(request: Request): Promise<Response> {
-  let body: IcsRequestBody;
-  try {
-    body = (await request.json()) as IcsRequestBody;
-  } catch {
-    return NextResponse.json({ error: 'Request body must be JSON.' }, { status: 400 });
-  }
-
-  const { slug, start, end } = body;
+/**
+ * One validation path for both entry points. A query string is no more
+ * trustworthy than a JSON body, so neither gets its own rules.
+ */
+async function buildIcsResponse(
+  input: { slug?: unknown; start?: unknown; end?: unknown },
+  origin: string,
+): Promise<Response> {
+  const { slug, start, end } = input;
   if (typeof slug !== 'string' || !slug) {
     return NextResponse.json({ error: '"slug" is required.' }, { status: 400 });
   }
@@ -65,14 +65,49 @@ export async function POST(request: Request): Promise<Response> {
     end,
     summary: circle.name,
     description: 'Scheduled with Overlap.',
-    url: `${new URL(request.url).origin}/c/${slug}`,
+    url: `${origin}/c/${slug}`,
   });
 
   return new Response(ics, {
     status: 200,
     headers: {
       'Content-Type': 'text/calendar; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${slug}.ics"`,
+      // Quotes stripped from the slug so a crafted value cannot break out of
+      // the filename parameter.
+      'Content-Disposition': `attachment; filename="${slug.replace(/[^A-Za-z0-9_-]/g, '')}.ics"`,
     },
   });
+}
+
+export async function POST(request: Request): Promise<Response> {
+  let body: IcsRequestBody;
+  try {
+    body = (await request.json()) as IcsRequestBody;
+  } catch {
+    return NextResponse.json({ error: 'Request body must be JSON.' }, { status: 400 });
+  }
+  return buildIcsResponse(body, new URL(request.url).origin);
+}
+
+/**
+ * Same file, via a plain link.
+ *
+ * POST suits the in-page "use this time" flow, where the slot is transient and
+ * nothing should be navigable. The agreed time is different: it is durable
+ * state on the circle, so it deserves an ordinary anchor that works without
+ * JavaScript, can be right-clicked, and survives being forwarded.
+ *
+ * Reuses the POST path's validation rather than duplicating it — the query
+ * string is no more trustworthy than a body.
+ */
+export async function GET(request: Request): Promise<Response> {
+  const params = new URL(request.url).searchParams;
+  return buildIcsResponse(
+    {
+      slug: params.get('slug'),
+      start: Number(params.get('start')),
+      end: Number(params.get('end')),
+    },
+    new URL(request.url).origin,
+  );
 }

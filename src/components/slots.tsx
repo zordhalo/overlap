@@ -83,6 +83,9 @@ function SlotRow({
         {members.map((m) => (
           <div key={m.id} className="flex items-center gap-2">
             <MemberTag name={m.name} tag={m.tag} color={m.color} />
+            {/* The name, not just the tag. A bare two-letter code is a puzzle
+                to anyone who has not already studied the timeline gutter. */}
+            <span className="text-sm text-(--muted)">{m.name}</span>
             <span className="text-sm text-(--ink)">{formatForMember(slot.start, m)}</span>
           </div>
         ))}
