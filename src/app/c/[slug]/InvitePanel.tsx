@@ -92,6 +92,17 @@ export function InvitePanel({
         </button>
       </div>
 
+      {/* Said at the moment it matters, not buried in a FAQ. This link is the
+          only way back in: there is no account to sign into and no email to
+          recover from, so somebody who closes the tab without copying it has
+          lost the circle. The browser remembers it, which covers the common
+          case, but not a different device or a cleared profile. */}
+      <p className="text-sm text-(--muted)">
+        <span style={{ color: 'var(--cost)' }}>Keep this link.</span> It is the only way back
+        into the circle — there is no account to sign into. This browser will remember it, but
+        another device will not.
+      </p>
+
       {/* Announced rather than only shown, so the confirmation is not
           invisible to anyone using a screen reader. */}
       <span aria-live="polite" className="sr-only">

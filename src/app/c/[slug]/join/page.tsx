@@ -3,6 +3,7 @@ import { getCircleBySlug } from '@/lib/db/queries';
 import { groupedZones } from '@/lib/zones';
 import { getSessionMemberId } from '@/lib/session';
 import { JoinForm } from './JoinForm';
+import { RememberCircle } from '@/components/RememberCircle';
 
 /**
  * The cold-open flow: someone arrives from a shared link with zero context
@@ -45,6 +46,9 @@ export default async function JoinPage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-xl flex-col gap-8 px-6 py-16">
+      {/* Recorded here as well as on the circle page: abandoning setup is the
+          single most likely way to lose a brand-new circle. */}
+      <RememberCircle slug={slug} name={circle.name} />
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-baseline gap-3">
           <span className="meta">{circle.name}</span>

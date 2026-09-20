@@ -20,6 +20,7 @@ import { clearChosenAction, switchMemberAction } from '@/app/actions';
 import { CircleShell } from './CircleShell';
 import { ShareButton } from './ShareButton';
 import { InvitePanel } from './InvitePanel';
+import { RememberCircle } from '@/components/RememberCircle';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** The timeline visualizes a shorter, denser window than the full search
@@ -158,6 +159,10 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 py-12">
+      {/* The only recovery path there is. A slug is a capability URL with no
+          account behind it, so a circle the browser does not remember and the
+          user did not copy is unreachable forever. */}
+      <RememberCircle slug={slug} name={circle.name} />
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
           <Meta as="div">Circle</Meta>

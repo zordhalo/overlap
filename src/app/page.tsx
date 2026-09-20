@@ -1,6 +1,7 @@
 import { Meta, Pill, SlitFrame } from '@/components/ui';
 import { createCircleAction } from './actions';
 import { DemoShowcase } from './DemoShowcase';
+import { RecentCircles } from '@/components/RecentCircles';
 import { demoMembers } from './demo-data';
 import { offHoursIntervals, sleepIntervals, suggest } from '@/lib/schedule';
 import type { MemberBands, Window } from '@/components/bands';
@@ -103,6 +104,8 @@ export default function HomePage() {
           </form>
         </SlitFrame>
       </section>
+
+      <RecentCircles />
 
       {/* The demo, framed as what it is: a real circle, not a screenshot. */}
       <section className="flex flex-col gap-5">
