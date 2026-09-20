@@ -13,12 +13,13 @@ import { getSessionMemberId } from '@/lib/session';
 import { offHoursIntervals, sleepIntervals, suggest } from '@/lib/schedule';
 import type { Member } from '@/lib/schedule/types';
 import type { MemberBands, Window } from '@/components/bands';
-import { GhostButton, Meta } from '@/components/ui';
+import { GhostButton, Meta, MemberTag, Pill } from '@/components/ui';
 import { fetchIcsIntervals } from '@/lib/ics';
 import { fetchGoogleBusy, isGoogleConfigured } from '@/lib/google';
 import { clearChosenAction, switchMemberAction } from '@/app/actions';
 import { CircleShell } from './CircleShell';
 import { ShareButton } from './ShareButton';
+import { InvitePanel } from './InvitePanel';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** The timeline visualizes a shorter, denser window than the full search
@@ -98,6 +99,24 @@ function scheduleCalendarRefresh(
       }),
     );
   });
+}
+
+/** One member's setup, shown while a circle is still waiting for others. */
+function MemberSummary({ member }: { member: Member }) {
+  const time = new Intl.DateTimeFormat('en-GB', {
+    timeZone: member.timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(Date.now());
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <MemberTag name={member.name} tag={member.tag} color={member.color} />
+      <span className="text-sm text-(--ink)">{member.name}</span>
+      <span className="meta text-(--muted)">
+        {member.timezone} · {time} now
+      </span>
+    </div>
+  );
 }
 
 export default async function CirclePage({ params }: { params: Promise<{ slug: string }> }) {
@@ -180,28 +199,67 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
             </div>
           ) : (
             <Link href={`/c/${slug}/join`}>
-              <GhostButton>Join this circle</GhostButton>
+              <Pill>Add yourself</Pill>
             </Link>
           )}
-          <ShareButton />
+          {/* Sharing only appears here once the circle is past the stage where
+              the invite panel below is leading with it — two copy-link controls
+              on one screen is the same ambiguity the slot list used to have. */}
+          {members.length > 1 ? <ShareButton /> : null}
         </div>
       </header>
 
 
       {members.length === 0 ? (
-        // Never an empty state: say so, and point at the one next action
-        // that fixes it.
-        <div className="slit-frame flex flex-col gap-3 p-6">
-          <Meta as="div">Nobody has joined yet</Meta>
-          <p className="text-(length:--text-body) text-(--muted)">
-            Share this link, or send the join page directly, and Overlap will start suggesting
-            times as soon as the first person sets up their availability.
+        // Nobody at all, including the visitor. One action, stated plainly.
+        <section
+          className="flex flex-col items-start gap-4 rounded-2xl p-6"
+          style={{ background: 'var(--card)', border: '1px solid var(--edge)' }}
+        >
+          <Meta as="div">Empty circle</Meta>
+          <h2 className="text-(length:--text-heading-sm) text-(--ink)">
+            Set yourself up to start
+          </h2>
+          <p className="max-w-prose text-sm text-(--muted)">
+            Add your timezone and the hours you keep. Then share the link, and times appear here
+            as soon as somebody else does the same.
           </p>
-          <div>
-            <Link href={`/c/${slug}/join`}>
-              <GhostButton>Join this circle</GhostButton>
-            </Link>
-          </div>
+          <Link href={`/c/${slug}/join`}>
+            <Pill>Set yourself up</Pill>
+          </Link>
+        </section>
+      ) : members.length === 1 ? (
+        // One member. There is nothing to schedule yet, so the page leads with
+        // the invitation rather than with an empty suggestion list — which is
+        // what the old state did, and why creating a circle felt like a dead
+        // end.
+        <div className="flex flex-col gap-6">
+          <InvitePanel slug={slug} memberCount={members.length} youAreIn={Boolean(currentMember)} />
+          {!currentMember ? (
+            <section
+              className="flex flex-col items-start gap-3 rounded-2xl p-6"
+              style={{ background: 'var(--card)', border: '1px solid var(--edge)' }}
+            >
+              <Meta as="div">One person so far</Meta>
+              <p className="max-w-prose text-sm text-(--muted)">
+                {members[0]?.name} is in. Add yourself and Overlap will start suggesting times.
+              </p>
+              <Link href={`/c/${slug}/join`}>
+                <Pill>Add yourself</Pill>
+              </Link>
+            </section>
+          ) : (
+            <section
+              className="flex flex-col gap-3 rounded-2xl p-6"
+              style={{ background: 'var(--card)', border: '1px solid var(--edge)' }}
+            >
+              <Meta as="div">Your setup</Meta>
+              <MemberSummary member={members[0]!} />
+              <Link href={`/c/${slug}/join`} className="meta underline underline-offset-4">
+                Change it
+              </Link>
+            </section>
+          )}
         </div>
       ) : (
         <CircleShell

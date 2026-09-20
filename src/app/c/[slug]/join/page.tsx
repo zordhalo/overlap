@@ -11,8 +11,18 @@ import { JoinForm } from './JoinForm';
  * this stays a server component so an unknown slug 404s before any client
  * JS ships.
  */
-export default async function JoinPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function JoinPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ new?: string }>;
+}) {
   const { slug } = await params;
+  // `?new=1` means we arrived straight from creating the circle. The form is
+  // identical either way; only the framing changes, because "join this circle"
+  // is the wrong sentence to show somebody the moment after they made it.
+  const { new: isNew } = await searchParams;
   const circle = await getCircleBySlug(slug);
   if (!circle) notFound();
 
@@ -36,14 +46,23 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
   return (
     <main className="mx-auto flex min-h-screen max-w-xl flex-col gap-8 px-6 py-16">
       <div className="flex flex-col gap-2">
-        <span className="meta">{circle.name}</span>
+        <div className="flex flex-wrap items-baseline gap-3">
+          <span className="meta">{circle.name}</span>
+          {isNew && !existing ? (
+            <span className="meta" style={{ color: 'var(--ok)' }}>
+              Circle created · step 2 of 2
+            </span>
+          ) : null}
+        </div>
         <h1 className="text-(length:--text-heading) leading-(--text-heading--line-height) tracking-(--text-heading--letter-spacing) text-(--ink)">
-          {existing ? 'Your setup' : 'Join this circle'}
+          {existing ? 'Your setup' : isNew ? 'Now set yourself up' : 'Join this circle'}
         </h1>
         <p className="text-(length:--text-body) text-(--muted)">
           {existing
             ? 'Change anything here and save. This browser is already linked to you, so this updates you rather than adding someone new.'
-            : 'Set yourself up once. You can come back and change any of this later from the same browser.'}
+            : isNew
+              ? 'You are the first person in it. Set your hours and you will get a link to send the others.'
+              : 'Set yourself up once. You can come back and change any of this later from the same browser.'}
         </p>
       </div>
       <JoinForm circleSlug={slug} zoneGroups={groupedZones()} existing={existing} />

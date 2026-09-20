@@ -49,7 +49,15 @@ export async function createCircleAction(formData: FormData): Promise<void> {
     horizonDays: DEFAULT_HORIZON_DAYS,
   });
 
-  redirect(`/c/${slug}`);
+  // Straight into setting yourself up, not to the circle.
+  //
+  // Creating a circle and landing on "nobody has joined yet" makes the person
+  // who just made it a spectator at their own table: they then have to notice
+  // a "join this circle" button and take a second, separate action to be in
+  // the thing they created. Whoever creates a circle is obviously in it, so
+  // creation continues directly into their own setup, and the circle page is
+  // where they arrive once they are actually a member.
+  redirect(`/c/${slug}/join?new=1`);
 }
 
 /** Parses an `<input type="time">` value ("HH:MM") into local minutes from
@@ -159,7 +167,11 @@ export async function joinCircleAction(circleSlug: string, formData: FormData): 
   });
 
   await setSessionMemberId(circleSlug, id);
-  redirect(`/c/${circleSlug}`);
+  // The first member has nobody to meet with yet, so their next action is not
+  // scheduling, it is inviting. Flagged here so the circle page can lead with
+  // the link instead of an empty suggestion list.
+  const isFirst = circle.members.length === 0;
+  redirect(`/c/${circleSlug}${isFirst ? '?invite=1' : ''}`);
 }
 
 
