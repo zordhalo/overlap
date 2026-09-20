@@ -31,8 +31,13 @@ describe('hexToRgbFloat', () => {
 });
 
 describe('globeTheme', () => {
-  it('pins no atmosphere glow (diffuse 0) and glowColor to --paper', () => {
-    expect(globeTheme.diffuse).toBe(0);
+  it('suppresses the atmosphere halo but keeps a terminator-capable light', () => {
+    // glowColor at --paper is what kills cobe's halo. `diffuse` is deliberately
+    // NOT 0: in cobe it is the directional light falloff, i.e. the day/night
+    // terminator, which is the information the globe exists to convey. It must
+    // stay above 0 and below 1 — flat at 0, blown out near 1.
+    expect(globeTheme.diffuse).toBeGreaterThan(0);
+    expect(globeTheme.diffuse).toBeLessThan(1);
     expect(globeTheme.glowColor).toEqual(hexToRgbFloat('#101010'));
   });
 

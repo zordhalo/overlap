@@ -60,8 +60,20 @@ const RULE = hexToRgbFloat('#212121');
 const PULSE = hexToRgbFloat('#98ff38');
 
 export const globeTheme: GlobeTheme = {
+  // `dark: 1` keeps the unlit hemisphere genuinely dark rather than merely
+  // dimmed, so the terminator reads as a hard edge between day and night.
   dark: 1,
-  diffuse: 0,
+  // Design review asked for `diffuse: 0` to kill cobe's default
+  // WebGL-tutorial sheen. Overridden to 0.55 during integration, because in
+  // cobe `diffuse` IS the directional light falloff — which is to say, it is
+  // the day/night terminator. At 0 the sphere renders flat and the globe
+  // loses the single piece of information it exists to carry.
+  //
+  // This is consistent with the review's actual principle: the objection was
+  // to decoration that carries no information. Shading that shows you where
+  // it is currently night is information. The halo was the real complaint,
+  // and `glowColor` below still suppresses it.
+  diffuse: 0.55,
   mapBrightness: 2.2,
   mapSamples: 16000,
   scale: 1,
