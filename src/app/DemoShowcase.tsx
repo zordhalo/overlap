@@ -61,7 +61,13 @@ function DemoContent({ members, bands, timelineWindow, result, viewerZone }: Omi
         lg:[grid-template-areas:'slots_globe'_'timeline_timeline']"
     >
       <div className="lg:[grid-area:slots]">
-        <Slots result={result} members={members} onPick={handlePick} selected={selected} />
+        <Slots
+          result={result}
+          members={members}
+          onPick={handlePick}
+          selected={selected}
+          viewerZone={viewerZone}
+        />
       </div>
       <div className="lg:[grid-area:timeline]">
         <Timeline

@@ -19,7 +19,7 @@ import { Timeline } from '@/components/timeline';
 import { Slots } from '@/components/slots';
 import type { MemberBands, Window } from '@/components/bands';
 import type { Member, Slot, SuggestResult } from '@/lib/schedule/types';
-import { chooseSlotAction } from '@/app/actions';
+import { chooseSlotAction, clearChosenAction } from '@/app/actions';
 
 type CircleShellProps = {
   slug: string;
@@ -31,6 +31,8 @@ type CircleShellProps = {
   /** The circle's persisted agreement, so a visitor arriving cold sees which
    *  time was chosen rather than an unselected list. */
   agreed?: { start: number; end: number } | null;
+  /** Name of whoever chose the current time, for the picker's panel. */
+  agreedByName?: string | null;
   /** The signed-in member's saved zone, so "your zone" means the zone they
    *  told us rather than wherever the browser happens to be. */
   viewerZone?: string | null;
@@ -45,6 +47,7 @@ export function CircleShell({
   now,
   viewerZone = null,
   agreed = null,
+  agreedByName = null,
 }: CircleShellProps) {
   return (
     <ClockProvider initialInstant={now}>
@@ -56,6 +59,7 @@ export function CircleShell({
         result={result}
         viewerZone={viewerZone}
         agreed={agreed}
+        agreedByName={agreedByName}
       />
     </ClockProvider>
   );
@@ -91,6 +95,7 @@ function CircleContent({
   result,
   viewerZone,
   agreed,
+  agreedByName,
 }: Omit<CircleShellProps, 'now'>) {
   const { focus } = useClock();
   // Seeded from the stored agreement, so the list shows the chosen time to
@@ -101,6 +106,10 @@ function CircleContent({
       : undefined,
   );
   const [pending, startTransition] = useTransition();
+  // Distinguishes "you just did this" from "this was already agreed". Without
+  // it the page announced "Saved for everyone" to someone who had merely
+  // opened the link and chosen nothing.
+  const [justActed, setJustActed] = useState(false);
 
   // Picking a slot is the moment the globe earns its place (PLAN.md §6):
   // it sets the shared clock's focus, which rotates the terminator to show
@@ -108,7 +117,18 @@ function CircleContent({
   // .ics for that slot — `Slots` doesn't distinguish its "Add to calendar"
   // and "Use this time" buttons in this callback, and choosing any slot is
   // a reasonable moment to hand over a real calendar file for it.
+  // Reopening the question is the inverse of picking, and belongs beside it
+  // rather than in a separate banner: one panel owns the decision.
+  const handleClear = () => {
+    setJustActed(false);
+    setSelected(undefined);
+    startTransition(() => {
+      void clearChosenAction(slug);
+    });
+  };
+
   const handlePick = (slot: Slot) => {
+    setJustActed(true);
     setSelected(slot);
     focus(slot.start);
     void downloadIcs(slug, slot);
@@ -128,13 +148,21 @@ function CircleContent({
         lg:[grid-template-areas:'slots_globe'_'timeline_timeline']"
     >
       <div className="flex flex-col gap-3 lg:[grid-area:slots]">
-        <Slots result={result} members={members} onPick={handlePick} selected={selected} />
+        <Slots
+          result={result}
+          members={members}
+          onPick={handlePick}
+          selected={selected}
+          viewerZone={viewerZone}
+          agreedByName={agreedByName}
+          onClear={handleClear}
+        />
         {/* Clicking previously did nothing visible while the .ics downloaded
             in the background, so it read as broken and invited a second click. */}
         <p aria-live="polite" className="meta normal-case tracking-normal text-(--muted)">
           {pending
             ? 'Saving this time for the circle…'
-            : selected
+            : justActed && selected
               ? 'Saved for everyone, and downloaded to your calendar.'
               : '\u00A0'}
         </p>

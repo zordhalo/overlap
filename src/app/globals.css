@@ -119,6 +119,15 @@
   --band-busy-hatch-pitch: 4px;
   --band-free: rgba(255, 255, 255, 0.26);
   --band-overlap: rgba(152, 255, 56, 0.85);
+
+  /* Slot-picker semantics. The picker is the one surface allowed to use
+     colour to encode meaning rather than identity: a time either costs
+     somebody something or it does not, and that is the single most useful
+     thing to see before reading any of the detail. */
+  --ok: #98ff38;
+  --ok-dim: rgba(152, 255, 56, 0.18);
+  --cost: #e0a458;
+  --cost-dim: rgba(224, 164, 88, 0.16);
 }
 
 html {

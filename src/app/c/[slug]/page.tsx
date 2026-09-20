@@ -187,50 +187,6 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
         </div>
       </header>
 
-      {circle.chosen && members.length > 0 ? (
-        // The decision, shown to everyone holding the link. This is what makes
-        // sharing the link the same act as telling people the time, instead of
-        // the group settling it again in chat afterwards.
-        <div className="slit-frame slit-frame-bright flex flex-col gap-4 p-6">
-          <div className="flex flex-wrap items-baseline justify-between gap-3">
-            <Meta as="h2" style={{ color: 'var(--pulse)' }}>
-              Agreed
-            </Meta>
-            {chosenByName ? <Meta as="span">picked by {chosenByName}</Meta> : null}
-          </div>
-          <div className="flex flex-wrap gap-x-6 gap-y-2">
-            {members.map((m) => (
-              <div key={m.id} className="flex items-center gap-2">
-                <span className="meta" style={{ color: m.color }}>
-                  {m.tag}
-                </span>
-                <span className="text-sm text-(--muted)">{m.name}</span>
-                <span className="text-sm text-(--ink)">
-                  {new Intl.DateTimeFormat('en-GB', {
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    timeZone: m.timezone,
-                  }).format(circle.chosen!.start)}
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <a
-              href={`/api/ics?slug=${encodeURIComponent(slug)}&start=${circle.chosen.start}&end=${circle.chosen.end}`}
-              className="btn-pill"
-            >
-              Add to calendar
-            </a>
-            <form action={clearChosenAction.bind(null, slug)}>
-              <GhostButton type="submit">Pick a different time</GhostButton>
-            </form>
-          </div>
-        </div>
-      ) : null}
 
       {members.length === 0 ? (
         // Never an empty state: say so, and point at the one next action
@@ -257,6 +213,7 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
           now={now}
         viewerZone={currentMember?.timezone ?? null}
         agreed={circle.chosen}
+        agreedByName={chosenByName}
         />
       )}
     </main>

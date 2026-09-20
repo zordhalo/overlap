@@ -1,13 +1,29 @@
 'use client';
 
 /**
- * The ranked-slot list: the entire point of Overlap. Nobody reading this
- * list should have to convert a time into their own zone by hand, and
- * nobody should ever land on an empty box — a `kind: 'none'` result gets a
- * named blocker and a next action instead.
+ * The slot picker.
+ *
+ * This replaced a stack of tall cards, one per candidate, each repeating every
+ * member's local time. With three members that was six lines and ~180px per
+ * option, so comparing five times meant scrolling past 900 pixels of nearly
+ * identical text — and because every card carried its own button, the list
+ * read as several independent actions rather than one choice.
+ *
+ * The shape here follows the actual question. "When can we meet?" is answered
+ * by a day and a time, so the options are chips grouped under their day: the
+ * whole week fits in a glance, and the times cluster visibly. Everyone's local
+ * time is the *detail* of one option, not something to print for all of them
+ * at once, so it moves into a single panel below that describes whichever
+ * option is chosen.
+ *
+ * This component is deliberately off the strict runs-on.dev language. That
+ * system encodes identity in monochrome and reserves colour almost entirely;
+ * picking a time needs colour to encode *meaning* — whether a slot costs
+ * somebody an early start — and needs conventional affordances (chips, a
+ * selected fill) that read as controls on sight.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DateTime } from 'luxon';
 import { GhostButton, Meta, MemberTag, Pill, SlitFrame } from '@/components/ui';
 import type { Member, MemberCost, Slot, SuggestResult } from '@/lib/schedule/types';
@@ -17,23 +33,60 @@ type SlotsProps = {
   members: Member[];
   onPick: (slot: Slot) => void;
   selected?: Slot;
+  /** Zone to group days and label chips in. Null falls back to UTC. */
+  viewerZone?: string | null;
+  /** Who chose the current time, for the agreed panel. */
+  agreedByName?: string | null;
+  /** Reopen the question. Omitted on the landing-page demo. */
+  onClear?: (() => void) | undefined;
 };
 
-export function Slots({ result, members, onPick, selected }: SlotsProps) {
+export function Slots({
+  result,
+  members,
+  onPick,
+  selected,
+  viewerZone = null,
+  agreedByName = null,
+  onClear,
+}: SlotsProps) {
   const membersById = useMemo(() => {
     const map = new Map<string, Member>();
     for (const m of members) map.set(m.id, m);
     return map;
   }, [members]);
 
+  // Same fallback ladder as the timeline: the member's saved zone, else the
+  // browser's, resolved after mount so the server and client first paint agree.
+  //
+  // Falling back to UTC instead (as this did) put the chips in UTC while the
+  // panel under them showed Toronto, and the strip below announced the
+  // browser's zone — three different answers to "what time is it" on one page.
+  const [browserZone, setBrowserZone] = useState<string | null>(null);
+  useEffect(() => {
+    setBrowserZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  }, []);
+  const zone = viewerZone ?? browserZone ?? 'UTC';
+
+  const days = useMemo(() => {
+    if (result.kind !== 'slots') return [];
+    // Grouped by the viewer's own calendar day. Grouping in UTC would split a
+    // single evening across two headings for anyone west of Greenwich.
+    const groups = new Map<string, { label: string; slots: Slot[] }>();
+    for (const slot of result.slots) {
+      const dt = DateTime.fromMillis(slot.start, { zone });
+      const key = dt.toISODate() ?? String(slot.start);
+      const existing = groups.get(key);
+      if (existing) existing.slots.push(slot);
+      else groups.set(key, { label: dt.toFormat('ccc d LLL'), slots: [slot] });
+    }
+    return [...groups.values()];
+  }, [result, zone]);
+
   if (result.kind === 'none') {
     return <NoSlots blockers={result.blockers} membersById={membersById} />;
   }
-
   if (result.slots.length === 0) {
-    // The engine's own contract reserves the empty array for `kind: 'none'`,
-    // but a defensive fallback costs nothing and keeps this component from
-    // ever rendering a blank box if that contract is ever violated upstream.
     return (
       <SlitFrame className="p-6">
         <Meta as="div">No times found. Try a longer horizon.</Meta>
@@ -41,119 +94,165 @@ export function Slots({ result, members, onPick, selected }: SlotsProps) {
     );
   }
 
-  const anySelected = result.slots.some((slot) => isSameSlot(slot, selected));
+  // Shown in the detail panel. Falls back to the best-ranked option so the
+  // panel is never empty and the recommendation is visible without a click.
+  const focused = selected ?? result.slots[0];
+  const isAgreed = Boolean(selected);
 
   return (
-    <ol className="flex flex-col gap-6" role="radiogroup" aria-label="Suggested meeting times">
-      {result.slots.map((slot, rank) => (
-        <li key={`${slot.start}-${slot.end}`}>
-          <SlotRow
-            slot={slot}
-            rank={rank}
-            members={members}
-            membersById={membersById}
-            selected={isSameSlot(slot, selected)}
-            anySelected={anySelected}
-            onPick={onPick}
-          />
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function SlotRow({
-  slot,
-  rank,
-  members,
-  membersById,
-  selected,
-  anySelected,
-  onPick,
-}: {
-  slot: Slot;
-  rank: number;
-  members: Member[];
-  membersById: Map<string, Member>;
-  selected: boolean;
-  anySelected: boolean;
-  onPick: (slot: Slot) => void;
-}) {
-  const isTop = rank === 0;
-  const burden = burdenCopy(slot.costs, membersById);
-
-  // Exactly one row is ever the "live" one.
-  //
-  // Before this, rank 0 carried a filled pill permanently while every other
-  // row carried an identical ghost button, so the list read as several equally
-  // available actions and clicking one changed nothing about the others. There
-  // was no way to see which time was actually agreed. Now the state is
-  // singular and visible: the selected row is the one that is bright, labelled,
-  // and carries the page's single filled action. Until something is selected
-  // the best-ranked row holds that position, because a list of options with no
-  // recommended one is its own kind of unhelpful.
-  const isLive = selected || (!anySelected && isTop);
-
-  return (
-    <SlitFrame
-      bright={isLive}
-      className={`flex flex-col gap-4 p-6 transition-opacity ${
-        anySelected && !selected ? 'opacity-55' : ''
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        {/* A radio, not a button: choosing a time is picking one of a set, and
-            the control should say so to a screen reader as well as to the eye. */}
-        <span
-          aria-hidden="true"
-          className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border"
-          style={{
-            borderColor: selected ? 'var(--pulse)' : 'var(--edge)',
-            background: selected ? 'var(--pulse)' : 'transparent',
-          }}
-        >
-          {selected ? (
-            <span className="size-1.5 rounded-full" style={{ background: 'var(--paper)' }} />
-          ) : null}
-        </span>
-        <Meta as="div" style={selected ? { color: 'var(--pulse)' } : undefined}>
-          {selected ? 'Agreed' : isTop ? 'Best match' : `Option ${rank + 1}`}
-        </Meta>
-      </div>
-
-      <div className="flex flex-wrap gap-x-6 gap-y-2">
-        {members.map((m) => (
-          <div key={m.id} className="flex items-center gap-2">
-            <MemberTag name={m.name} tag={m.tag} color={m.color} />
-            {/* The name, not just the tag. A bare two-letter code is a puzzle
-                to anyone who has not already studied the timeline gutter. */}
-            <span className="text-sm text-(--muted)">{m.name}</span>
-            <span className="text-sm text-(--ink)">{formatForMember(slot.start, m)}</span>
+    <div className="flex flex-col gap-6">
+      <div
+        role="radiogroup"
+        aria-label="Suggested meeting times"
+        className="flex flex-col gap-4"
+      >
+        {days.map((day) => (
+          <div key={day.label} className="flex flex-col gap-2">
+            <Meta as="div">{day.label}</Meta>
+            <div className="flex flex-wrap gap-2">
+              {day.slots.map((slot) => (
+                <SlotChip
+                  key={`${slot.start}-${slot.end}`}
+                  slot={slot}
+                  zone={zone}
+                  selected={isSameSlot(slot, selected)}
+                  isBest={slot === result.slots[0]}
+                  onPick={onPick}
+                />
+              ))}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Burden line. Deliberately silent for a clean slot rather than
-          printing "works for everyone" in every case that isn't clean —
-          see burdenCopy for why zero-cost is the one line that IS printed. */}
-      <Meta as="div">{burden}</Meta>
+      {focused ? (
+        <Detail
+          slot={focused}
+          members={members}
+          membersById={membersById}
+          zone={zone}
+          agreed={isAgreed}
+          agreedByName={agreedByName}
+          onPick={onPick}
+          onClear={onClear}
+        />
+      ) : null}
+    </div>
+  );
+}
 
-      <div>
-        {selected ? (
-          // Ghost, not filled: once a time is agreed the banner above owns the
-          // page's one filled action, and two identical pills on screen was
-          // exactly the ambiguity that made this list feel like a multi-select.
-          <GhostButton onClick={() => onPick(slot)} aria-pressed>
-            Re-download calendar file
-          </GhostButton>
-        ) : isLive ? (
-          <Pill onClick={() => onPick(slot)} aria-pressed={false}>
-            Choose this time
-          </Pill>
+function SlotChip({
+  slot,
+  zone,
+  selected,
+  isBest,
+  onPick,
+}: {
+  slot: Slot;
+  zone: string;
+  selected: boolean;
+  isBest: boolean;
+  onPick: (slot: Slot) => void;
+}) {
+  const clean = slot.score === 0;
+  const time = DateTime.fromMillis(slot.start, { zone }).toFormat('HH:mm');
+
+  // Colour carries one bit — does this cost anyone anything — and the chip
+  // still says so in its label for anyone who cannot use the colour.
+  const accent = clean ? 'var(--ok)' : 'var(--cost)';
+
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={() => onPick(slot)}
+      title={clean ? 'Works for everyone' : 'Costs someone time outside their hours'}
+      className="group relative flex items-center gap-2 rounded-full px-4 py-2 text-sm transition-colors"
+      style={{
+        background: selected ? accent : 'transparent',
+        color: selected ? 'var(--paper)' : 'var(--ink)',
+        border: `1px solid ${selected ? accent : 'var(--edge)'}`,
+      }}
+    >
+      <span
+        aria-hidden="true"
+        className="inline-block size-1.5 rounded-full"
+        style={{ background: selected ? 'var(--paper)' : accent }}
+      />
+      <span className="tabular-nums">{time}</span>
+      {isBest && !selected ? (
+        <span className="meta" style={{ color: 'var(--muted)' }}>
+          best
+        </span>
+      ) : null}
+      <span className="sr-only">
+        {selected ? ' — selected' : ''}
+        {clean ? ' — works for everyone' : ' — outside someone’s hours'}
+      </span>
+    </button>
+  );
+}
+
+function Detail({
+  slot,
+  members,
+  membersById,
+  zone,
+  agreed,
+  agreedByName,
+  onPick,
+  onClear,
+}: {
+  slot: Slot;
+  members: Member[];
+  membersById: Map<string, Member>;
+  zone: string;
+  agreed: boolean;
+  agreedByName: string | null;
+  onPick: (slot: Slot) => void;
+  onClear?: (() => void) | undefined;
+}) {
+  const burden = burdenCopy(slot.costs, membersById);
+  const headline = DateTime.fromMillis(slot.start, { zone }).toFormat('ccc d LLL, HH:mm');
+
+  return (
+    <SlitFrame bright className="flex flex-col gap-4 p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <Meta as="h2" style={agreed ? { color: 'var(--ok)' } : undefined}>
+          {agreed ? 'Agreed' : 'Best match'}
+        </Meta>
+        {agreed && agreedByName ? <Meta as="span">picked by {agreedByName}</Meta> : null}
+      </div>
+
+      <div className="text-(length:--text-heading-sm) text-(--ink)">{headline}</div>
+
+      {/* Everyone's local time, for this one option only. Printing it for
+          every candidate at once was most of the old layout's bulk. */}
+      <ul className="flex flex-wrap gap-x-6 gap-y-2">
+        {members.map((m) => (
+          <li key={m.id} className="flex items-center gap-2">
+            <MemberTag name={m.name} tag={m.tag} color={m.color} />
+            <span className="text-sm text-(--muted)">{m.name}</span>
+            <span className="text-sm tabular-nums text-(--ink)">
+              {formatForMember(slot.start, m)}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <Meta as="div" style={slot.score === 0 ? undefined : { color: 'var(--cost)' }}>
+        {burden}
+      </Meta>
+
+      <div className="flex flex-wrap items-center gap-3">
+        {agreed ? (
+          <>
+            <Pill onClick={() => onPick(slot)}>Add to calendar</Pill>
+            {onClear ? <GhostButton onClick={onClear}>Pick a different time</GhostButton> : null}
+          </>
         ) : (
-          <GhostButton onClick={() => onPick(slot)} aria-pressed={false}>
-            Choose this time
-          </GhostButton>
+          <Pill onClick={() => onPick(slot)}>Choose this time</Pill>
         )}
       </div>
     </SlitFrame>
@@ -186,47 +285,32 @@ function NoSlots({
   );
 }
 
-/**
- * Copy from `Slot.costs`. `work` (penalty 0) says nothing — most members on
- * most slots are simply fine, and repeating that for every member would
- * bury the one or two lines that actually matter. If *every* cost is zero
- * the slot reads as "works for everyone," which is the one case worth
- * saying explicitly, because a silent line and a genuinely clean slot would
- * otherwise look identical.
- *
- * This never claims the burden rotates — the engine has no memory of past
- * meetings, so saying "it's someone else's turn" would be a straightforward
- * lie. It says whose night this is, not whose turn it is.
- */
-function burdenCopy(costs: MemberCost[], membersById: Map<string, Member>): string {
-  const lines: string[] = [];
-  for (const cost of costs) {
-    if (cost.penalty <= 0) continue;
-    const name = membersById.get(cost.memberId)?.name ?? 'someone';
-    switch (cost.reason) {
-      case 'off-hours':
-        lines.push(`outside ${name}'s hours`);
-        break;
-      case 'early':
-        lines.push(`an early start for ${name}`);
-        break;
-      case 'late':
-        lines.push(`a late night for ${name}`);
-        break;
-      case 'work':
-        break;
-    }
-  }
-  if (lines.length === 0) return 'Works for everyone.';
-  return lines.join(' · ');
-}
-
-/** `member.timezone` is the only zone that matters here — the whole point
- *  of this list is that nobody converts by hand. */
-function formatForMember(startMs: number, member: Member): string {
-  return DateTime.fromMillis(startMs, { zone: member.timezone }).toFormat('ccc d LLL · HH:mm');
-}
-
 function isSameSlot(a: Slot, b: Slot | undefined): boolean {
   return b !== undefined && a.start === b.start && a.end === b.end;
+}
+
+function formatForMember(instant: number, member: Member): string {
+  return DateTime.fromMillis(instant, { zone: member.timezone }).toFormat('HH:mm');
+}
+
+/**
+ * The honest cost line.
+ *
+ * Never claims the burden rotates between meetings: the scorer is stateless
+ * and has no memory of who took the last early call, so saying so would be
+ * false.
+ */
+function burdenCopy(costs: MemberCost[], membersById: Map<string, Member>): string {
+  const paying = costs.filter((c) => c.penalty > 0);
+  if (paying.length === 0) return 'Works for everyone.';
+
+  const parts = paying.map((c) => {
+    const name = membersById.get(c.memberId)?.name ?? 'someone';
+    if (c.reason === 'early') return `an early start for ${name}`;
+    if (c.reason === 'late') return `a late night for ${name}`;
+    return `outside ${name}'s hours`;
+  });
+
+  if (parts.length === 1) return `Costs ${parts[0]}.`;
+  return `Costs ${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}.`;
 }
