@@ -9,3 +9,8 @@ out/
 next-env.d.ts
 .DS_Store
 coverage/
+
+# Secrets only. NOT a blanket `.env*`, which the Vercel CLI appends on
+# `env add`: that pattern also matches .env.example, the one env file that is
+# meant to be committed and is a new contributor's only guide to what the app
+# needs. The specific patterns above already cover every real secret file.
