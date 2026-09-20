@@ -11,6 +11,7 @@ import {
   uuid,
   doublePrecision,
   bigint,
+  index,
   uniqueIndex,
   check,
 } from 'drizzle-orm/pg-core';
@@ -78,6 +79,27 @@ export const member = pgTable('member', {
    * "clear my iCal URL" the same destructive operation.
    */
   googleRefreshTokenEncrypted: text('google_refresh_token_encrypted'),
+  /**
+   * Optional recovery address, encrypted at rest like every other secret here.
+   *
+   * Overlap's security model is the capability URL: holding the link is the
+   * whole authorisation. Recovery is, unavoidably, a second way in — so the
+   * thing guarding it has to be something only the right person holds, and
+   * inbox access is the well-understood answer. It stays opt-in, because
+   * "no account" remains true for anyone who skips it.
+   */
+  emailEncrypted: text('email_encrypted'),
+  /**
+   * HMAC of the normalised address, for lookup only.
+   *
+   * Recovery has to find members by address, and AES-GCM is deterministically
+   * unsearchable by design (fresh IV per record, so the same email encrypts
+   * differently every time). A keyed hash gives an index without ever storing
+   * or scanning a plaintext address — and being keyed, not plain SHA-256, it
+   * cannot be attacked with a dictionary of common addresses if the table
+   * leaks without the key.
+   */
+  emailHash: text('email_hash'),
   tag: text('tag').notNull(),
   color: text('color').notNull(),
   lat: doublePrecision('lat'),
@@ -88,6 +110,7 @@ export const member = pgTable('member', {
   check('member_sleep_end_range', sql`${t.sleepEnd} >= 0 AND ${t.sleepEnd} <= 1439`),
   check('member_work_start_range', sql`${t.workStart} >= 0 AND ${t.workStart} <= 1439`),
   check('member_work_end_range', sql`${t.workEnd} >= 0 AND ${t.workEnd} <= 1439`),
+  index('member_email_hash_idx').on(t.emailHash),
 ]);
 
 /**
@@ -108,4 +131,26 @@ export const busy = pgTable('busy', {
   syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   check('busy_interval_order', sql`${t.endsAt} > ${t.startsAt}`),
+]);
+
+
+/**
+ * Throttling for the recovery endpoint.
+ *
+ * Recovery sends mail to an address the requester names, which makes it the
+ * one route in this app that can be turned into a weapon: unthrottled, anyone
+ * could use it to mail-bomb a known address, or to burn the sending
+ * reputation of a domain shared with the rest of the business.
+ *
+ * Rows are keyed by either the address hash or the caller's IP, and are
+ * counted within a window rather than updated, so a burst cannot be hidden by
+ * a single row being rewritten.
+ */
+export const recoveryAttempt = pgTable('recovery_attempt', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** Either `hash:<emailHash>` or `ip:<address>`. Never a plaintext address. */
+  subject: text('subject').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('recovery_attempt_subject_idx').on(t.subject, t.createdAt),
 ]);

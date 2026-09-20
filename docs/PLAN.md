@@ -219,7 +219,12 @@ busy    (id, member_id, starts_at, ends_at, source, synced_at)
 - `busy` is a cache with a TTL. **A failed calendar fetch keeps the previous
   rows rather than clearing them**: losing busy data silently turns "busy" into
   "free", which is the worst direction for a scheduler to fail in.
-- No email column. Nothing sends email tonight, so nothing collects an address.
+- **An optional, encrypted email per member**, added later than this plan.
+  Reversing "no email column" was deliberate: a capability URL with nothing
+  behind it is unrecoverable once lost, which is a worse outcome than holding
+  an address the owner chose to give. It is indexed by a keyed HMAC rather than
+  stored searchably, and the recovery endpoint answers identically whether or
+  not an address is known, so it cannot be used to test who uses Overlap.
 
 
 ## 6. Visual design — the runs-on.dev language

@@ -81,9 +81,12 @@ export function RecentCircles() {
       </ul>
 
       <Meta as="p" className="normal-case tracking-normal text-(--muted)">
-        Kept in this browser only, never sent anywhere. A circle link is the only
-        way in, so if you clear this list or move to another device, keep the link
-        somewhere you can find it.
+        Kept in this browser only, never sent anywhere. On another device, or after
+        clearing this list,{' '}
+        <a href="/recover" className="text-(--ink) underline underline-offset-4">
+          get your links emailed to you
+        </a>{' '}
+        if you added an address when you joined.
       </Meta>
     </section>
   );

@@ -39,6 +39,9 @@ export type ExistingMember = {
   workStart: number;
   workEnd: number;
   hasCalendar: boolean;
+  /** Whether an address is already saved. The address itself is never sent
+   *  to the client: it is PII the rest of the circle has no business seeing. */
+  hasEmail?: boolean;
 };
 
 /** Stored minutes-from-midnight back to the "HH:MM" an <input type=time> wants. */
@@ -204,6 +207,35 @@ export function JoinForm({
             </Meta>
           </div>
         )}
+      </SlitFrame>
+
+      {/* Recovery address. Optional, and the copy has to make that real:
+          the product's promise is that there is no account, and an email field
+          that feels compulsory quietly breaks it. It is offered here because
+          this is the only moment we know who the person is, and because a
+          circle link with nothing behind it is unrecoverable once lost. */}
+      <SlitFrame className="flex flex-col gap-3 p-6">
+        <div className="flex flex-col gap-1">
+          <span className="meta">Email (optional)</span>
+          <p className="text-sm text-(--muted)">
+            Only so you can get your circle links back if you lose them. A circle link is the
+            only way in, and there is no account or password behind it. Not used for anything
+            else, and never shown to anyone in the circle.
+          </p>
+        </div>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          placeholder={existing?.hasEmail ? 'An address is saved — type to replace it' : 'you@example.com'}
+          className="slit-input rounded-md px-3 py-2 text-(--ink)"
+        />
+        {existing?.hasEmail ? (
+          <span className="meta text-(--muted)">
+            Leave blank to keep the address already saved.
+          </span>
+        ) : null}
       </SlitFrame>
 
       <div>

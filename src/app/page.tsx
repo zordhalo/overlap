@@ -136,7 +136,10 @@ export default function HomePage() {
 
       <footer className="slit-top pt-6">
         <Meta as="p" className="normal-case tracking-normal text-(--muted)">
-          Open source, AGPL-3.0 —{' '}
+          <a href="/recover" className="text-(--ink) underline underline-offset-4">
+            Lost a circle link?
+          </a>{' '}
+          · Open source, AGPL-3.0 —{' '}
           <a
             href="https://github.com/zordhalo/overlap"
             className="text-(--ink) underline underline-offset-4"
@@ -151,7 +154,7 @@ export default function HomePage() {
           <a href="https://advancelabs.dev" className="text-(--ink) underline underline-offset-4">
             Advance Labs
           </a>
-          .
+          . <a href="/privacy" className="text-(--ink) underline underline-offset-4">Privacy</a>.
         </Meta>
       </footer>
     </main>

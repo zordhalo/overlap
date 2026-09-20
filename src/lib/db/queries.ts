@@ -4,11 +4,12 @@
  * store swappable in one file if Neon ever needs to be replaced.
  */
 import { customAlphabet } from 'nanoid';
-import { eq, and, gt } from 'drizzle-orm';
+import { eq, and, gt, gte } from 'drizzle-orm';
 import type { Member } from '@/lib/schedule/types';
 import { db } from './client';
-import { circle, member, busy } from './schema';
+import { circle, member, busy, recoveryAttempt } from './schema';
 import { encrypt, decrypt } from '../crypto';
+import { createHmac } from 'node:crypto';
 import { assertValidTimezone as assertResolvableTimezone } from '../timezone';
 
 /**
@@ -118,6 +119,12 @@ export type MemberRecord = {
   color: string;
   lat: number | null;
   lng: number | null;
+  /**
+   * Whether a recovery address is saved — a boolean, never the address.
+   * MemberRecord is rendered for every member of a circle, so a decrypted
+   * email on it would be visible to the whole group.
+   */
+  hasEmail: boolean;
   /** Which connection a member is using, so the UI can name it accurately. */
   calendarSource: 'google' | 'ics' | null;
   /**
@@ -174,6 +181,7 @@ export async function getCircleBySlug(slug: string): Promise<CircleWithMembers |
         color: m.color,
         lat: m.lat,
         lng: m.lng,
+        hasEmail: Boolean(m.emailHash),
         calendarSource: m.googleRefreshTokenEncrypted ? 'google' : m.icsUrlEncrypted ? 'ics' : null,
         hasCalendar: Boolean(m.icsUrlEncrypted || m.googleRefreshTokenEncrypted),
         busy: busyRows.map((b) => ({ start: b.startsAt.getTime(), end: b.endsAt.getTime() })),
@@ -501,4 +509,82 @@ export async function clearGoogleRefreshToken(memberId: string): Promise<void> {
     .update(member)
     .set({ googleRefreshTokenEncrypted: null })
     .where(eq(member.id, memberId));
+}
+
+
+/**
+ * Keyed hash of a normalised address, used only as a lookup index.
+ *
+ * Keyed rather than a bare SHA-256: an unkeyed digest of an email is trivially
+ * reversible with a dictionary of common addresses, so a leaked table would
+ * effectively be a leaked mailing list. With the key held separately, the
+ * column is inert on its own.
+ */
+export function emailLookupHash(normalisedEmail: string): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) throw new Error('SESSION_SECRET is not set.');
+  return createHmac('sha256', secret).update(`email:${normalisedEmail}`).digest('base64url');
+}
+
+/** Attach or replace a member's recovery address. */
+export async function setMemberEmail(memberId: string, normalisedEmail: string): Promise<void> {
+  assertId(memberId, 'memberId');
+  await db
+    .update(member)
+    .set({
+      emailEncrypted: encrypt(normalisedEmail),
+      emailHash: emailLookupHash(normalisedEmail),
+    })
+    .where(eq(member.id, memberId));
+}
+
+export async function clearMemberEmail(memberId: string): Promise<void> {
+  assertId(memberId, 'memberId');
+  await db
+    .update(member)
+    .set({ emailEncrypted: null, emailHash: null })
+    .where(eq(member.id, memberId));
+}
+
+export type RecoverableCircle = { slug: string; circleName: string; memberName: string };
+
+/**
+ * Every circle reachable from one address.
+ *
+ * Returns the slugs so they can be mailed to the address itself and nowhere
+ * else. Nothing here is ever rendered to the caller of the recovery endpoint:
+ * doing so would turn it into an oracle for "does this person use Overlap".
+ */
+export async function circlesForEmailHash(hash: string): Promise<RecoverableCircle[]> {
+  const rows = await db
+    .select({
+      slug: circle.slug,
+      circleName: circle.name,
+      memberName: member.name,
+    })
+    .from(member)
+    .innerJoin(circle, eq(member.circleId, circle.id))
+    .where(eq(member.emailHash, hash));
+  return rows;
+}
+
+/** Recovery requests allowed per subject within the window. */
+export const RECOVERY_WINDOW_MS = 60 * 60 * 1000;
+export const RECOVERY_MAX_PER_WINDOW = 3;
+
+/**
+ * Records an attempt and reports whether it is over the limit.
+ *
+ * Counted BEFORE sending and recorded regardless of outcome, so a burst cannot
+ * slip through while a slow send is in flight.
+ */
+export async function throttleRecovery(subject: string): Promise<boolean> {
+  const since = new Date(Date.now() - RECOVERY_WINDOW_MS);
+  const recent = await db
+    .select({ id: recoveryAttempt.id })
+    .from(recoveryAttempt)
+    .where(and(eq(recoveryAttempt.subject, subject), gte(recoveryAttempt.createdAt, since)));
+
+  await db.insert(recoveryAttempt).values({ subject });
+  return recent.length >= RECOVERY_MAX_PER_WINDOW;
 }

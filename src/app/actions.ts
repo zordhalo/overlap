@@ -10,12 +10,14 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import { looksLikeEmail, normaliseEmail } from '@/lib/email';
 import {
   addMember,
   clearChosenSlot,
   createCircle,
   getCircleBySlug,
   setChosenSlot,
+  setMemberEmail,
   updateMember,
 } from '@/lib/db/queries';
 import {
@@ -123,6 +125,16 @@ export async function joinCircleAction(circleSlug: string, formData: FormData): 
   // never throws over an obscure-but-valid zone.
   const { lat, lng } = zoneInfo(timezone);
 
+  // Optional recovery address. Normalised and validated here; the db layer
+  // encrypts it and stores a keyed hash for lookup. Blank is a legitimate
+  // answer and must stay one — "no account" is only true if skipping this
+  // costs nothing.
+  const emailRaw = String(formData.get('email') ?? '').trim();
+  const email = emailRaw ? normaliseEmail(emailRaw) : '';
+  if (email && !looksLikeEmail(email)) {
+    throw new Error('That does not look like an email address.');
+  }
+
   // Returning visitor: this browser already holds a session for a member of
   // THIS circle, so the join page is an edit, not a second sign-up. Without
   // this branch a returning member silently becomes a duplicate — and the
@@ -138,6 +150,7 @@ export async function joinCircleAction(circleSlug: string, formData: FormData): 
     : undefined;
 
   if (existing) {
+    if (email) await setMemberEmail(existing.id, email);
     await updateMember(existing.id, {
       name,
       timezone,
@@ -165,6 +178,8 @@ export async function joinCircleAction(circleSlug: string, formData: FormData): 
     lat,
     lng,
   });
+
+  if (email) await setMemberEmail(id, email);
 
   await setSessionMemberId(circleSlug, id);
   // The first member has nobody to meet with yet, so their next action is not

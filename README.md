@@ -50,6 +50,12 @@ Open source, AGPL-3.0. Self-host it or run it locally.
 - **It never stores what you are doing.** There is no column for event titles.
   Overlap records *that* you are busy and nothing more, so a circle cannot leak
   one person's meeting subjects to the rest of the group.
+- **It asks for an email only to give you your links back.** Optional, and
+  skipping it costs nothing — there is still no account. If you add one it is
+  stored encrypted, indexed by a keyed hash so the database holds no searchable
+  list of addresses, never shown to anyone else in your circle, and used for
+  exactly one kind of message: re-sending your own circle links. See
+  [/privacy](https://overlap.runs-on.dev/privacy).
 - **It does not rotate burden across meetings.** The scheduler is stateless: it
   spreads cost within one meeting's options, but it has no memory of who took
   the last early call. Anything claiming otherwise would be lying to you.
@@ -73,6 +79,7 @@ You need three environment variables:
 | `ENCRYPTION_KEY` | 32 bytes, base64. Encrypts stored iCal URLs. |
 | `SESSION_SECRET` | 32 bytes, base64. Signs the cookie that remembers which member you are. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional. Enables the Google Calendar button; see the setup doc. |
+| `RESEND_API_KEY` / `RESEND_FROM_EMAIL` | Optional. Enables emailing lost circle links back. Unset, the recovery page says so rather than failing. |
 
 Generate the two secrets with:
 
@@ -159,7 +166,12 @@ Named rather than hidden:
 
 - **No rate limiting** on creating or joining circles. The control is slug
   entropy (21 random characters), which makes enumeration infeasible, but a
-  determined person can create circles in bulk.
+  determined person can create circles in bulk. The recovery endpoint *is*
+  throttled, per address and per caller, because it sends mail.
+- **Recovery needs an address you added beforehand.** Without one there is
+  genuinely nothing to recover: no account, no password, no other record of
+  you. The browser also remembers circles it has opened, but that does not
+  survive a different device.
 - **`.ics` file upload is not wired up.** The parser handles it; only the
   pasted-URL path has a UI.
 - **Recurring-rule support is a subset**: `DAILY`/`WEEKLY`/`MONTHLY` with

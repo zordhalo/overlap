@@ -41,6 +41,7 @@ export default async function JoinPage({
         workStart: mine.workStart,
         workEnd: mine.workEnd,
         hasCalendar: mine.hasCalendar,
+        hasEmail: mine.hasEmail,
       }
     : undefined;
 
