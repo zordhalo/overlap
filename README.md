@@ -36,9 +36,15 @@ Open source, AGPL-3.0. Self-host it or run it locally.
 
 ## What it deliberately does not do
 
-- **No Google OAuth.** Connecting a calendar uses the secret iCal URL your
-  provider already exposes. That means no Cloud Console project, no consent
-  screen, no refresh tokens to store, and nothing to revoke.
+- **It asks Google for one scope, and it is the narrow one.** Connecting Google
+  uses `calendar.freebusy`, which returns busy intervals and nothing else — no
+  titles, no attendees, no locations. The promise below is enforced by the API
+  surface, not by our restraint. Adding the meeting to your calendar still goes
+  through the `.ics` download, because doing it over the API would need
+  `calendar.events` ("view and edit events on all your calendars") to achieve
+  the same thing. Setup: [docs/GOOGLE-OAUTH-SETUP.md](./docs/GOOGLE-OAUTH-SETUP.md).
+  Unconfigured, the whole path stays hidden and pasting a secret iCal URL still
+  works.
 - **It never stores what you are doing.** There is no column for event titles.
   Overlap records *that* you are busy and nothing more, so a circle cannot leak
   one person's meeting subjects to the rest of the group.
@@ -64,6 +70,7 @@ You need three environment variables:
 | `DATABASE_URL` | Any Postgres. [Neon](https://neon.tech) free tier works. |
 | `ENCRYPTION_KEY` | 32 bytes, base64. Encrypts stored iCal URLs. |
 | `SESSION_SECRET` | 32 bytes, base64. Signs the cookie that remembers which member you are. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional. Enables the Google Calendar button; see the setup doc. |
 
 Generate the two secrets with:
 

@@ -70,6 +70,14 @@ export const member = pgTable('member', {
   workStart: integer('work_start').notNull(),
   workEnd: integer('work_end').notNull(),
   icsUrlEncrypted: text('ics_url_encrypted'),
+  /**
+   * Google refresh token, encrypted at rest exactly like the iCal URL.
+   *
+   * Kept separate rather than overloading the iCal column: a member may switch
+   * between the two, and a single column would make "disconnect Google" and
+   * "clear my iCal URL" the same destructive operation.
+   */
+  googleRefreshTokenEncrypted: text('google_refresh_token_encrypted'),
   tag: text('tag').notNull(),
   color: text('color').notNull(),
   lat: doublePrecision('lat'),

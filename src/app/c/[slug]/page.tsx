@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { after } from 'next/server';
 import {
   getCircleBySlug,
+  getGoogleRefreshToken,
   getMemberIcsUrl,
   isBusyStale,
   syncMemberBusy,
@@ -14,6 +15,7 @@ import type { Member } from '@/lib/schedule/types';
 import type { MemberBands, Window } from '@/components/bands';
 import { GhostButton, Meta } from '@/components/ui';
 import { fetchIcsIntervals } from '@/lib/ics';
+import { fetchGoogleBusy, isGoogleConfigured } from '@/lib/google';
 import { clearChosenAction, switchMemberAction } from '@/app/actions';
 import { CircleShell } from './CircleShell';
 import { ShareButton } from './ShareButton';
@@ -60,7 +62,10 @@ function computeBands(members: Member[], window: Window): MemberBands[] {
  * "busy" into "free", which is the worst direction for a scheduler to fail in.
  * A stale calendar is a much smaller problem than a wrong one.
  */
-function scheduleCalendarRefresh(members: { id: string; hasCalendar: boolean }[], window: { from: number; to: number }): void {
+function scheduleCalendarRefresh(
+  members: { id: string; hasCalendar: boolean }[],
+  window: { from: number; to: number },
+): void {
   const withCalendars = members.filter((m) => m.hasCalendar);
   if (withCalendars.length === 0) return;
 
@@ -68,6 +73,21 @@ function scheduleCalendarRefresh(members: { id: string; hasCalendar: boolean }[]
     await Promise.allSettled(
       withCalendars.map(async (m) => {
         if (!(await isBusyStale(m.id))) return;
+
+        // Google first when connected: freeBusy returns busy intervals and
+        // nothing else, so it is both the better data and the narrower grant.
+        // A pasted iCal URL stays as the fallback, which is what keeps this
+        // working for anyone whose Workspace admin has disabled OAuth apps.
+        const refreshToken = await getGoogleRefreshToken(m.id);
+        if (refreshToken) {
+          await syncMemberBusy(
+            m.id,
+            (signal) => fetchGoogleBusy(refreshToken, { from: window.from, to: window.to, signal }),
+            'google',
+          );
+          return;
+        }
+
         const url = await getMemberIcsUrl(m.id);
         if (!url) return;
         await syncMemberBusy(
@@ -109,6 +129,10 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
 
   const sessionMemberId = await getSessionMemberId(slug);
   const currentMember = members.find((m) => m.id === sessionMemberId);
+  // The connection state lives on the db record, not on the frozen scheduling
+  // `Member` — which has no calendar fields on purpose, so a credential can
+  // never ride along into the engine or a client prop.
+  const currentRecord = circle.members.find((m) => m.id === sessionMemberId);
   const chosenByName = circle.chosen?.byMemberId
     ? (members.find((m) => m.id === circle.chosen?.byMemberId)?.name ?? null)
     : null;
@@ -126,6 +150,22 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
           {currentMember ? (
             <div className="flex items-center gap-3">
               <Meta as="span">This is you — {currentMember.name}</Meta>
+              {/* Only shown where the deployment actually has Google
+                  credentials: offering a button that 501s would be worse than
+                  not offering it. */}
+              {isGoogleConfigured() && currentRecord?.calendarSource !== 'google' ? (
+                <a
+                  href={`/api/google/start?slug=${encodeURIComponent(slug)}`}
+                  className="meta underline underline-offset-4 hover:text-(--ink)"
+                >
+                  Connect Google Calendar
+                </a>
+              ) : null}
+              {currentRecord?.calendarSource === 'google' ? (
+                <Meta as="span" style={{ color: 'var(--pulse)' }}>
+                  Google Calendar connected
+                </Meta>
+              ) : null}
               {/* Without this there is no way out of an identity this browser
                   already holds. The first thing anyone does before sending a
                   link to three colleagues is add those three themselves to see

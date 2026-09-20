@@ -118,6 +118,8 @@ export type MemberRecord = {
   color: string;
   lat: number | null;
   lng: number | null;
+  /** Which connection a member is using, so the UI can name it accurately. */
+  calendarSource: 'google' | 'ics' | null;
   /**
    * Whether a calendar is connected — deliberately a boolean, never the URL.
    * A secret iCal URL is a credential, so it stays encrypted in the database
@@ -172,7 +174,8 @@ export async function getCircleBySlug(slug: string): Promise<CircleWithMembers |
         color: m.color,
         lat: m.lat,
         lng: m.lng,
-        hasCalendar: Boolean(m.icsUrlEncrypted),
+        calendarSource: m.googleRefreshTokenEncrypted ? 'google' : m.icsUrlEncrypted ? 'ics' : null,
+        hasCalendar: Boolean(m.icsUrlEncrypted || m.googleRefreshTokenEncrypted),
         busy: busyRows.map((b) => ({ start: b.startsAt.getTime(), end: b.endsAt.getTime() })),
       };
     }),
@@ -458,4 +461,44 @@ export async function clearChosenSlot(circleId: string): Promise<void> {
     .update(circle)
     .set({ chosenStart: null, chosenEnd: null, chosenBy: null, chosenAt: null })
     .where(eq(circle.id, circleId));
+}
+
+
+/**
+ * Store a member's Google refresh token, encrypted at rest.
+ *
+ * Google is stored alongside, not instead of, any iCal URL: a member who
+ * connects Google keeps whatever they pasted before, so disconnecting Google
+ * falls back rather than leaving them with nothing.
+ */
+export async function setGoogleRefreshToken(memberId: string, refreshToken: string): Promise<void> {
+  assertId(memberId, 'memberId');
+  if (!refreshToken) throw new Error('Refusing to store an empty Google refresh token.');
+  await db
+    .update(member)
+    .set({ googleRefreshTokenEncrypted: encrypt(refreshToken) })
+    .where(eq(member.id, memberId));
+}
+
+/** Decrypts on demand, for the sync path only. Never returned to a client. */
+export async function getGoogleRefreshToken(memberId: string): Promise<string | null> {
+  assertId(memberId, 'memberId');
+  const row = await db.query.member.findFirst({ where: eq(member.id, memberId) });
+  if (!row?.googleRefreshTokenEncrypted) return null;
+  try {
+    return decrypt(row.googleRefreshTokenEncrypted);
+  } catch {
+    // A token we cannot decrypt (rotated key, corrupted row) is unusable. Fail
+    // as "not connected" rather than throwing into a page render; the member
+    // can reconnect, and the sync path keeps the last known good busy rows.
+    return null;
+  }
+}
+
+export async function clearGoogleRefreshToken(memberId: string): Promise<void> {
+  assertId(memberId, 'memberId');
+  await db
+    .update(member)
+    .set({ googleRefreshTokenEncrypted: null })
+    .where(eq(member.id, memberId));
 }

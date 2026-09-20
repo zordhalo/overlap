@@ -1,0 +1,1 @@
+ALTER TABLE "member" ADD COLUMN "google_refresh_token_encrypted" text;
