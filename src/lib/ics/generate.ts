@@ -51,11 +51,21 @@ function foldLine(line: string): string {
  *  Order matters: backslash must be escaped first, or the escaping of the
  *  other characters would itself get re-escaped. */
 function escapeText(value: string): string {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\n/g, '\\n');
+  return (
+    value
+      .replace(/\\/g, '\\\\')
+      // CR is normalised FIRST, before the other escapes. A circle name is
+      // attacker-controlled and flows straight into SUMMARY; a bare \r would
+      // terminate the content line for a lenient iCalendar parser and let the
+      // rest of the name be read as injected properties — a spoofed ORGANIZER
+      // or URL in the file every member of that circle downloads. Escaping
+      // only \n leaves that open, because CRLF and lone CR both end a line
+      // under RFC 5545.
+      .replace(/\r\n?/g, '\\n')
+      .replace(/;/g, '\\;')
+      .replace(/,/g, '\\,')
+      .replace(/\n/g, '\\n')
+  );
 }
 
 /** Formats an epoch-ms instant as a UTC `DATE-TIME` (`YYYYMMDDTHHMMSSZ`). */

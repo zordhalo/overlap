@@ -42,14 +42,49 @@ export type FetchIcsOptions = {
  * transport-level failures — unreachable host, non-2xx, oversized body,
  * timeout — go through the throw path here.
  */
+/** Redirect hops allowed before giving up. Calendar providers legitimately
+ *  redirect once or twice (http→https, a CDN hop); more than this is a
+ *  redirect chain no real calendar needs. */
+const MAX_REDIRECTS = 3;
+
 export async function fetchIcsIntervals(url: string, opts: FetchIcsOptions): Promise<Interval[]> {
   // Must run first, every time — see module doc.
-  const validated = await assertFetchableUrl(url);
+  let target = await assertFetchableUrl(url);
 
-  const response = await fetch(validated, {
-    signal: opts.signal,
-    headers: { Accept: 'text/calendar, text/plain, */*' },
-  });
+  // Redirects are followed BY HAND, revalidating every hop.
+  //
+  // `fetch` follows redirects itself by default, which would silently defeat
+  // the whole guard: a member pastes an innocuous URL on a host they control,
+  // it answers 302 to http://169.254.169.254/… , and undici quietly fetches
+  // the cloud metadata endpoint for them. The initial-URL check never sees the
+  // real destination. That is a one-shot bypass needing no DNS rebinding, no
+  // TTL games and no race — strictly easier than the rebinding risk the guard
+  // already documents. So: `redirect: 'manual'`, and re-run the guard against
+  // every Location before following it.
+  let response: Response | undefined;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    response = await fetch(target, {
+      signal: opts.signal,
+      redirect: 'manual',
+      headers: { Accept: 'text/calendar, text/plain, */*' },
+    });
+
+    if (response.status < 300 || response.status > 399) break;
+
+    const location = response.headers.get('location');
+    if (!location) {
+      throw new Error(`iCal fetch failed: ${response.status} redirect with no Location`);
+    }
+    // Resolved against the current target so a relative Location works, then
+    // put through the same public-IP check as the original URL.
+    target = await assertFetchableUrl(new URL(location, target).href);
+
+    if (hop === MAX_REDIRECTS) {
+      throw new Error(`iCal fetch failed: more than ${MAX_REDIRECTS} redirects`);
+    }
+  }
+
+  if (!response) throw new Error('iCal fetch failed: no response');
   if (!response.ok) {
     throw new Error(`iCal fetch failed: ${response.status} ${response.statusText}`);
   }

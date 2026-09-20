@@ -178,9 +178,12 @@ Per member, per candidate slot:
 |---|---|---|
 | Inside working hours | 0 | — |
 | Awake, outside working hours | 2 | "outside <name>'s hours" |
-| Within 1h of a sleep boundary | 10 | "an early start for <name>" / "a late night for <name>" |
+| Within 1h of a sleep boundary | 25 | "an early start for <name>" / "a late night for <name>" |
 
-`score = Σ penalty`. **Ship this alone first.** Variance across members is
+`score = Σ penalty`. 25 rather than 10 for the sleep boundary: at six members
+`2 × 6 = 12` would otherwise outrank dragging one person to the edge of their
+sleep, so the ranker would prefer hurting one person badly to mildly
+inconveniencing everyone. See §10, Okonkwo #9. **Ship this alone first.** Variance across members is
 computed and stored on the slot but is used only to break exact score ties, and
 it must never block the ranked list from rendering.
 

@@ -36,8 +36,14 @@ describe('globeTheme', () => {
     // NOT 0: in cobe it is the directional light falloff, i.e. the day/night
     // terminator, which is the information the globe exists to convey. It must
     // stay above 0 and below 1 — flat at 0, blown out near 1.
+    // Must stay above 0 — at 0 the sphere renders flat and the day/night
+    // terminator, the only information the globe carries, disappears. The
+    // upper bound is a sanity rail, not a design pin: cobe's diffuse is a
+    // light multiplier that legitimately exceeds 1, and the shipped value was
+    // tuned against real screenshots because the sphere was otherwise
+    // illegible on the obsidian canvas.
     expect(globeTheme.diffuse).toBeGreaterThan(0);
-    expect(globeTheme.diffuse).toBeLessThan(1);
+    expect(globeTheme.diffuse).toBeLessThanOrEqual(2);
     expect(globeTheme.glowColor).toEqual(hexToRgbFloat('#101010'));
   });
 

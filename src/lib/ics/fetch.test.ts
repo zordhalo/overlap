@@ -138,3 +138,58 @@ describe('fetchIcsIntervals', () => {
     await expect(promise).rejects.toThrow();
   });
 });
+
+describe('redirect handling', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('re-validates the guard on every redirect hop, not just the first URL', async () => {
+    // The exploit this exists to stop: an innocuous public URL that answers
+    // 302 to the cloud metadata address. `fetch` follows redirects on its own
+    // by default, so a guard that only checks the original URL never sees the
+    // real destination — no DNS rebinding needed, just one redirect.
+    mockLookup.mockImplementation(((hostname: string) =>
+      Promise.resolve(
+        hostname === '169.254.169.254'
+          ? [{ address: '169.254.169.254', family: 4 }]
+          : [{ address: '93.184.216.34', family: 4 }],
+      )) as unknown as typeof lookup);
+
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'http://169.254.169.254/latest/meta-data/' },
+        }),
+    );
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    await expect(
+      fetchIcsIntervals('https://calendar.example.com/c.ics', { ...WINDOW, signal: AbortSignal.timeout(5_000) }),
+    ).rejects.toThrow();
+
+    // Stopped AT the redirect rather than following it: exactly one request,
+    // and it never reached the metadata address.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops after a bounded number of redirects', async () => {
+    mockPublicDns();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://example.com/next' },
+        }),
+    );
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    await expect(fetchIcsIntervals('https://example.com/a.ics', { ...WINDOW, signal: AbortSignal.timeout(5_000) })).rejects.toThrow(
+      /redirect/i,
+    );
+    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(4);
+  });
+});
