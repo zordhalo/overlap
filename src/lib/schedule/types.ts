@@ -58,7 +58,10 @@ export type CostReason = 'work' | 'off-hours' | 'early' | 'late';
 
 export type MemberCost = {
   memberId: string;
-  /** 0 inside working hours, 2 awake but off-hours, 10 within 1h of sleep. */
+  /** 0 inside working hours, 2 awake but off-hours, 25 within 1h of sleep.
+   *  25 rather than 10 so a single person dragged to their sleep boundary always
+   *  outranks mild inconvenience spread across a group: at six members, 2x6=12
+   *  would otherwise beat a lone 10. */
   penalty: number;
   reason: CostReason;
 };

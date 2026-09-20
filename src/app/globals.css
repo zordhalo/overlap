@@ -1,0 +1,410 @@
+@import "tailwindcss";
+
+/*
+ * Overlap speaks the same design language as runs-on.dev (same owner, same
+ * obsidian-canvas-and-hairlines system) but this is a separate codebase, so
+ * the tokens and the "slit line" primitives below are reimplemented from the
+ * PLAN.md spec rather than copied file-for-file.
+ *
+ * layout.tsx must supply these font CSS variables via next/font/google
+ * loaders (class names applied to <html> or <body>):
+ *
+ *   --font-display  Bitcount Prop Single   (headings)
+ *   --font-body     [Satoshi stand-in]     (body copy — see note below)
+ *   --font-mono     IBM Plex Mono          (meta labels, mono tags)
+ *
+ * Satoshi substitution: the reference (runs-on.dev) self-hosts Satoshi from
+ * local woff2 files this repo does not have. We stand in a Google-hosted
+ * geometric sans with a comparable low-contrast, rounded-terminal feel
+ * (Space Grotesk) rather than pull in a license we can't self-host cleanly.
+ * Swap for real Satoshi woff2s later; nothing downstream depends on which
+ * font backs --font-body, only that the variable exists.
+ */
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-rule: var(--rule);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-signal: var(--signal);
+  --color-pulse: var(--pulse);
+  --color-flag: var(--flag);
+
+  --color-tint-ice: var(--tint-ice);
+  --color-tint-brass: var(--tint-brass);
+  --color-tint-mint: var(--tint-mint);
+  --color-tint-orchid: var(--tint-orchid);
+  --color-tint-clay: var(--tint-clay);
+  --color-tint-steel: var(--tint-steel);
+}
+
+@theme {
+  /* Hierarchy comes from scale and negative tracking, never from bold —
+     every weight below is 400 regardless of which font resolves it. */
+  --font-display-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-body-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-mono-family: var(--font-mono), ui-monospace, monospace;
+
+  --text-caption: 13px;
+  --text-caption--line-height: 1.5;
+  --text-body: 16px;
+  --text-body--line-height: 1.25;
+  --text-heading-xs: 18px;
+  --text-heading-xs--line-height: 1.31;
+  --text-subheading: 21px;
+  --text-subheading--line-height: 1.05;
+  --text-heading-sm: 23px;
+  --text-heading-sm--line-height: 1.07;
+  --text-heading-sm--letter-spacing: -0.004em;
+  --text-heading: 34px;
+  --text-heading--line-height: 1.03;
+  --text-heading--letter-spacing: -0.005em;
+  --text-heading-lg: 44px;
+  --text-heading-lg--line-height: 1.07;
+  --text-heading-lg--letter-spacing: -0.007em;
+  --text-display: 63px;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.011em;
+}
+
+:root {
+  /* Dark only. There is no light-mode fallback to design against. */
+  color-scheme: dark;
+
+  --paper: #101010;
+  --card: #080808;
+  --rule: #212121;
+  --ink: #f3f3f3;
+  --muted: #9c9c9c;
+  --signal: #ffffff;
+  --pulse: #98ff38;
+  --flag: #d97757;
+
+  /* Member tints. Restrained enough to hold up on obsidian at low alpha
+     bands, distinct enough at a glance. --pulse is reserved for the overlap
+     itself and must never be handed out as a member colour — identity is
+     carried by the two-letter tag as much as by tint, so a reused hue is
+     never load-bearing on its own. */
+  --tint-ice: #7fb2ff;
+  --tint-brass: #c9a227;
+  --tint-mint: #8fd9c0;
+  --tint-orchid: #c58fd9;
+  --tint-clay: #d9a08f;
+  --tint-steel: #9fa8b8;
+
+  /* Slit lines: every rule on the page is a line of light whose ends fade
+     into the canvas. Structural lines sit at --slit; row separators and
+     resting input edges are dimmer and brighten on focus/hover. */
+  --slit: rgba(255, 255, 255, 0.35);
+  --slit-dim: rgba(255, 255, 255, 0.2);
+  --slit-frame: rgba(255, 255, 255, 0.22);
+  --slit-frame-hi: rgba(255, 255, 255, 0.55);
+  --slit-bright: rgba(255, 255, 255, 0.85);
+  --edge: rgba(255, 255, 255, 0.2);
+  --edge-focus: rgba(255, 255, 255, 0.8);
+
+  /* Timeline band values (PLAN.md section 6). Exposed as tokens so the
+     timeline agent consumes fixed values instead of inventing colours.
+     `--band-free` is deliberately quiet (0.26 alpha, not near-white) —
+     a member is free most of the day, so if free were bright the strip
+     would glow everywhere and the overlap (--pulse at 0.85) would no
+     longer be the only saturated thing on the page. Busy is carried by a
+     45°/4px hatch layered on top of --band-busy-base, not by a distinct
+     value, so the encoding survives greyscale and compressed screenshots. */
+  --band-asleep: #080808;
+  --band-off-hours: rgba(255, 255, 255, 0.1);
+  --band-busy-base: rgba(255, 255, 255, 0.1);
+  --band-busy-hatch: rgba(255, 255, 255, 0.22);
+  --band-busy-hatch-pitch: 4px;
+  --band-free: rgba(255, 255, 255, 0.26);
+  --band-overlap: rgba(152, 255, 56, 0.85);
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, currentColor 24%, transparent) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, currentColor 20%, transparent);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, currentColor 34%, transparent);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body-family);
+  font-weight: 400;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display-family);
+  font-weight: 400;
+}
+
+::selection {
+  background: var(--signal);
+  color: var(--paper);
+}
+
+a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+@layer components {
+  /* The single filled white action per screen. */
+  .btn-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    background: var(--signal);
+    color: var(--paper);
+    padding: 0.75rem 1.5rem;
+    font-family: var(--font-mono-family);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .btn-pill:hover {
+    opacity: 0.9;
+  }
+  .btn-pill:active {
+    transform: translateY(1px);
+  }
+  .btn-pill[disabled],
+  .btn-pill[aria-disabled="true"] {
+    opacity: 0.3;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Secondary action: no fill, just a slit outline that overshoots and
+     crosses at the corners, same construction as .slit-frame. */
+  .btn-ghost {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 8px;
+    color: var(--signal);
+    padding: 0.625rem 1.25rem;
+    font-family: var(--font-mono-family);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: none;
+    border: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .btn-ghost:hover {
+    opacity: 0.8;
+  }
+  .btn-ghost:active {
+    transform: translateY(1px);
+  }
+  .btn-ghost::before {
+    content: "";
+    position: absolute;
+    inset: -14px;
+    pointer-events: none;
+    background:
+      linear-gradient(90deg, transparent 0, var(--slit) 30px, var(--slit) calc(100% - 30px), transparent 100%) 0 14px / 100% 1px no-repeat,
+      linear-gradient(90deg, transparent 0, var(--slit) 30px, var(--slit) calc(100% - 30px), transparent 100%) 0 calc(100% - 14px) / 100% 1px no-repeat,
+      linear-gradient(180deg, transparent 0, var(--slit) 30px, var(--slit) calc(100% - 30px), transparent 100%) 14px 0 / 1px 100% no-repeat,
+      linear-gradient(180deg, transparent 0, var(--slit) 30px, var(--slit) calc(100% - 30px), transparent 100%) calc(100% - 14px) 0 / 1px 100% no-repeat;
+  }
+
+  /* Mono uppercase meta label: section labels, zone names, UTC offsets. */
+  .meta {
+    font-family: var(--font-mono-family);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+}
+
+/* ── Slit lines ──────────────────────────────────────────────────────
+   Every rule and frame on the page is a slit: a slim line of light that
+   fades into the canvas at both ends. Card frames are four independent
+   slits that overshoot the box and cross at the corners, technical-drawing
+   style — never a hard rectangle, never a box-shadow. */
+
+.slit-h {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, var(--slit) 18%, var(--slit) 82%, transparent);
+}
+.slit-v {
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--slit) 18%, var(--slit) 82%, transparent);
+}
+
+.slit-top,
+.slit-bottom {
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+}
+.slit-top {
+  background-image: linear-gradient(90deg, transparent, var(--slit) 18%, var(--slit) 82%, transparent);
+  background-position: 0 0;
+}
+.slit-bottom {
+  background-image: linear-gradient(90deg, transparent, var(--slit) 18%, var(--slit) 82%, transparent);
+  background-position: 0 100%;
+}
+.slit-dim {
+  --slit: var(--slit-dim);
+}
+
+.slit-y {
+  background-image:
+    linear-gradient(90deg, transparent, var(--slit) 18%, var(--slit) 82%, transparent),
+    linear-gradient(90deg, transparent, var(--slit) 18%, var(--slit) 82%, transparent);
+  background-repeat: no-repeat;
+  background-size: 100% 1px, 100% 1px;
+  background-position: 0 0, 0 100%;
+}
+
+/* Row separators for a list: every child after the first paints its own
+   dim top slit, so a list reads as a stack of quiet hairlines rather than
+   `divide-y` hard borders. */
+.slit-rows > * + * {
+  background-image: linear-gradient(90deg, transparent, var(--slit-dim) 15%, var(--slit-dim) 85%, transparent);
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+  background-position: 0 0;
+}
+
+/* Card frame: four slits overshooting the box, crossing at the corners.
+   Registered as a custom property so hover/selected states can transition
+   the line colour instead of snapping. Cards need generous gaps — a
+   neighbour's overshoot must never touch this one's. */
+@property --slit-line {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(255, 255, 255, 0.22);
+}
+
+.slit-frame {
+  --slit-line: var(--slit-frame);
+  --slit-over: 20px;
+  --slit-edge: 44px;
+  position: relative;
+  transition: --slit-line 0.25s ease;
+}
+.slit-frame::before {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--slit-over));
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 0, var(--slit-line) var(--slit-edge), var(--slit-line) calc(100% - var(--slit-edge)), transparent 100%) 0 var(--slit-over) / 100% 1px no-repeat,
+    linear-gradient(90deg, transparent 0, var(--slit-line) var(--slit-edge), var(--slit-line) calc(100% - var(--slit-edge)), transparent 100%) 0 calc(100% - var(--slit-over)) / 100% 1px no-repeat,
+    linear-gradient(180deg, transparent 0, var(--slit-line) var(--slit-edge), var(--slit-line) calc(100% - var(--slit-edge)), transparent 100%) var(--slit-over) 0 / 1px 100% no-repeat,
+    linear-gradient(180deg, transparent 0, var(--slit-line) var(--slit-edge), var(--slit-line) calc(100% - var(--slit-edge)), transparent 100%) calc(100% - var(--slit-over)) 0 / 1px 100% no-repeat;
+}
+.slit-frame:hover {
+  --slit-line: var(--slit-frame-hi);
+}
+/* Selected/active variant — e.g. the top-ranked slot card. */
+.slit-frame-bright {
+  --slit-line: var(--slit-bright);
+}
+.slit-frame-bright:hover {
+  --slit-line: var(--slit-bright);
+}
+
+/* Slit-edged input: the same four-line treatment, but painted as a
+   background (not an overshooting pseudo-element) because <input>/<select>/
+   <textarea> can't carry ::before. Lines run to the corner with a short
+   ramp instead of overshooting. */
+@property --edge-color {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(255, 255, 255, 0.2);
+}
+
+.slit-input {
+  --edge-color: var(--edge);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(90deg, transparent 0, var(--edge-color) 6px, var(--edge-color) calc(100% - 6px), transparent 100%) top / 100% 1px no-repeat,
+    linear-gradient(90deg, transparent 0, var(--edge-color) 6px, var(--edge-color) calc(100% - 6px), transparent 100%) bottom / 100% 1px no-repeat,
+    linear-gradient(180deg, transparent 0, var(--edge-color) 6px, var(--edge-color) calc(100% - 6px), transparent 100%) left / 1px 100% no-repeat,
+    linear-gradient(180deg, transparent 0, var(--edge-color) 6px, var(--edge-color) calc(100% - 6px), transparent 100%) right / 1px 100% no-repeat;
+  transition: --edge-color 0.2s ease;
+}
+.slit-input:focus,
+.slit-input:focus-visible {
+  --edge-color: var(--edge-focus);
+  outline: none;
+}
+
+/* Live status dot: a single pulse reserved for genuinely live states
+   (isLive from useClock, calendar sync in progress). Disabled entirely,
+   not just slowed, under reduced motion — see the media query below. */
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Zeroing duration alone leaves a still-running animation's *delay*
+     ticking (the reference's flap tiles taught us this the hard way), so
+     glow/pulse elements are force-stopped and pinned to a static fill
+     rather than merely sped up. */
+  .pulse-dot {
+    animation: none !important;
+    animation-delay: 0s !important;
+    opacity: 1;
+  }
+}
