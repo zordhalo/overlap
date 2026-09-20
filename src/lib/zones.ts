@@ -203,12 +203,42 @@ export type ZoneInfo = {
  * `isValidTimezone` first if the input is user-supplied and you want a soft
  * failure instead.
  */
+/**
+ * Deprecated IANA names mapped to the canonical ones the curated table keys on.
+ *
+ * These are not hypothetical: a browser reporting `Asia/Calcutta` (still what
+ * some runtimes resolve to, and what `Intl.supportedValuesOf` itself returns —
+ * see lib/timezone.ts) missed the table and fell through to the offset-derived
+ * fallback, which puts the marker at latitude 0. That is the Indian Ocean, not
+ * India. The zone was valid and the time was right; only the globe lied.
+ */
+const ALIASES: Record<string, string> = {
+  'Asia/Calcutta': 'Asia/Kolkata',
+  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+  'Asia/Rangoon': 'Asia/Yangon',
+  'Europe/Kiev': 'Europe/Kyiv',
+  'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
+  'America/Indianapolis': 'America/Indiana/Indianapolis',
+  'America/Godthab': 'America/Nuuk',
+  'Africa/Asmera': 'Africa/Asmara',
+  'Atlantic/Faeroe': 'Atlantic/Faroe',
+  'Pacific/Truk': 'Pacific/Chuuk',
+  'Pacific/Ponape': 'Pacific/Pohnpei',
+  'US/Eastern': 'America/New_York',
+  'US/Central': 'America/Chicago',
+  'US/Mountain': 'America/Denver',
+  'US/Pacific': 'America/Los_Angeles',
+};
+
 export function zoneInfo(tz: string): ZoneInfo {
   if (!isValidTimezone(tz)) {
     throw new Error(`Invalid IANA timezone: "${tz}"`);
   }
   const offsetMinutes = currentOffsetMinutes(tz);
-  const curated = CURATED[tz];
+  // Canonicalise before the lookup; the offset is still read from the zone the
+  // caller actually gave us, which is correct either way since an alias and
+  // its canonical name resolve to the same rules.
+  const curated = CURATED[tz] ?? CURATED[ALIASES[tz] ?? ''];
   if (curated) {
     return { ...curated, offsetMinutes };
   }

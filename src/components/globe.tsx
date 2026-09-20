@@ -48,7 +48,7 @@ const EASE_RATE = 0.04;
 
 /** Marker radius in cobe's own units (fraction of globe radius). Matches the
  *  scale cobe's own examples use for city-sized markers. */
-const MARKER_SIZE = 0.06;
+const MARKER_SIZE = 0.075;
 
 /** Baseline camera tilt (radians) so the globe reads as a sphere rather than
  *  a flat disc before anyone drags it. Clamped drag range keeps it from ever
@@ -170,17 +170,61 @@ export function Globe({
     [members, focusInstant],
   );
 
-  const markers = useMemo(
-    () =>
-      members
-        .filter((m): m is Member & { lat: number; lng: number } => m.lat !== null && m.lng !== null)
-        .map((m) => ({
+  const markers = useMemo(() => {
+    const placed = members.filter(
+      (m): m is Member & { lat: number; lng: number } => m.lat !== null && m.lng !== null,
+    );
+
+    // Fan out members who share a point.
+    //
+    // A marker's coordinates are the representative city of a timezone, not
+    // anybody's address — so two people in the same zone get byte-identical
+    // coordinates and draw on the same pixel, and the second silently covers
+    // the first. Two co-founders in Toronto looked like one person, with no
+    // indication anyone was missing.
+    //
+    // Members sharing a point are spread around a small ring instead. The
+    // offset is under a degree, well inside the error a city-level marker
+    // already carries, so this adds no dishonesty the marker did not have.
+    const byPoint = new Map<string, (Member & { lat: number; lng: number })[]>();
+    for (const m of placed) {
+      const key = `${m.lat.toFixed(2)},${m.lng.toFixed(2)}`;
+      const bucket = byPoint.get(key);
+      if (bucket) bucket.push(m);
+      else byPoint.set(key, [m]);
+    }
+
+    // 2.5 degrees, not a fraction of one: at the size the globe actually
+    // renders, a sub-degree ring is a couple of pixels and the dots still read
+    // as one smudge. Still comfortably inside the error a timezone-level
+    // marker already carries — Toronto and Montreal are further apart than
+    // this and share a zone.
+    const SPREAD_DEGREES = 2.5;
+    return placed.map((m) => {
+      const key = `${m.lat.toFixed(2)},${m.lng.toFixed(2)}`;
+      const bucket = byPoint.get(key) ?? [m];
+      if (bucket.length === 1) {
+        return {
           location: [m.lat, m.lng] as [number, number],
           size: MARKER_SIZE,
           color: hexToRgbFloat(m.color),
-        })),
-    [members],
-  );
+        };
+      }
+      const index = bucket.indexOf(m);
+      const angle = (index / bucket.length) * Math.PI * 2;
+      // Longitude degrees shrink toward the poles, so widen the horizontal
+      // step by 1/cos(lat) to keep the ring circular on screen.
+      const lngScale = 1 / Math.max(0.2, Math.cos((m.lat * Math.PI) / 180));
+      return {
+        location: [
+          m.lat + Math.sin(angle) * SPREAD_DEGREES,
+          m.lng + Math.cos(angle) * SPREAD_DEGREES * lngScale,
+        ] as [number, number],
+        size: MARKER_SIZE,
+        color: hexToRgbFloat(m.color),
+      };
+    });
+  }, [members]);
   // cobe compares marker arrays by reference in `update`, so a content-keyed
   // string is what actually gates re-sending markers to the GPU buffer.
   const markersKey = useMemo(() => JSON.stringify(markers), [markers]);

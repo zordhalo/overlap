@@ -57,7 +57,7 @@ function DemoContent({ members, bands, timelineWindow, result, viewerZone }: Omi
   return (
     <div
       className="grid grid-cols-1 gap-8
-        lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[auto_auto]
+        lg:grid-cols-[minmax(0,1fr)_400px] lg:grid-rows-[auto_auto]
         lg:[grid-template-areas:'slots_globe'_'timeline_timeline']"
     >
       <div className="lg:[grid-area:slots]">

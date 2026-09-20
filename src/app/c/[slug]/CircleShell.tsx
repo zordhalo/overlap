@@ -112,7 +112,7 @@ function CircleContent({
   return (
     <div
       className="grid grid-cols-1 gap-10
-        lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-[auto_auto]
+        lg:grid-cols-[minmax(0,1fr)_420px] lg:grid-rows-[auto_auto]
         lg:[grid-template-areas:'slots_globe'_'timeline_timeline']"
     >
       <div className="flex flex-col gap-3 lg:[grid-area:slots]">

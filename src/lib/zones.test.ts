@@ -40,3 +40,24 @@ describe('groupedZones', () => {
     );
   });
 });
+
+describe('deprecated zone aliases', () => {
+  it('places a deprecated alias at its canonical coordinates, not at latitude 0', () => {
+    // Asia/Calcutta is what several runtimes still resolve to — including
+    // Intl.supportedValuesOf itself. Missing the curated table sent the marker
+    // to lat 0, which is the Indian Ocean rather than India.
+    const canonical = zoneInfo('Asia/Kolkata');
+    const alias = zoneInfo('Asia/Calcutta');
+    expect(alias.lat).toBeCloseTo(canonical.lat, 5);
+    expect(alias.lng).toBeCloseTo(canonical.lng, 5);
+    expect(alias.lat).not.toBe(0);
+  });
+
+  it.each([
+    ['Europe/Kiev', 'Europe/Kyiv'],
+    ['US/Eastern', 'America/New_York'],
+    ['America/Indianapolis', 'America/Indiana/Indianapolis'],
+  ])('maps %s onto %s coordinates', (alias, canonical) => {
+    expect(zoneInfo(alias).lat).toBeCloseTo(zoneInfo(canonical).lat, 5);
+  });
+});

@@ -58,17 +58,17 @@ const PAPER = hexToRgbFloat('#101010');
 // smudge rather than an object — the whole night hemisphere disappeared. Two
 // steps lighter keeps it unmistakably in the graphite family while giving the
 // sphere an edge you can actually see.
-const SPHERE = hexToRgbFloat('#4a4a4a');
+const SPHERE = hexToRgbFloat('#3f4450');
 // --pulse #98ff38 — default marker colour; the globe agent overrides this
 // per-marker with the member's tint (see ui/MemberTag.tsx for the tint set).
 const PULSE = hexToRgbFloat('#98ff38');
 
 export const globeTheme: GlobeTheme = {
-  // Tuned against real screenshots across three passes. At 1.0 the night
-  // hemisphere merged into the #101010 canvas and the globe read as a smudge
-  // rather than an object. 0.55 keeps an unmistakable day/night difference
-  // while leaving the dark side legible as part of a sphere.
-  dark: 0.55,
+  // Lowered to 0.35: at 0.55 the night hemisphere swallowed the continents on
+  // that side entirely, so half the globe carried no information at all. The
+  // terminator is still visible in the shading, it just no longer erases the
+  // land it falls across.
+  dark: 0.12,
   // Design review asked for `diffuse: 0` to kill cobe's default
   // WebGL-tutorial sheen. Overridden during integration, because in cobe
   // `diffuse` IS the directional light falloff — which is to say, it is the
@@ -79,12 +79,12 @@ export const globeTheme: GlobeTheme = {
   // to decoration that carries no information. Shading that shows you where
   // it is currently night is information. The halo was the real complaint,
   // and `glowColor` below still suppresses it.
-  diffuse: 1.15,
+  diffuse: 1.45,
   // Tuned against a real screenshot, not guessed. At 2.2 the globe read as a
   // dark smudge on the #101010 canvas; the dot map IS this globe's only
   // surface detail, so it has to carry the whole object.
-  mapBrightness: 6,
-  mapSamples: 16000,
+  mapBrightness: 22,
+  mapSamples: 24000,
   scale: 1,
   baseColor: SPHERE,
   markerColor: PULSE,
