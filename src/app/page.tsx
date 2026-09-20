@@ -125,6 +125,33 @@ export default function HomePage() {
           and Overlap does the rest.
         </Meta>
       </section>
+
+      {/* Credit where the address comes from. Overlap lives on a claimed name
+          from a subdomain registry rather than on a *.vercel.app URL, and
+          saying so is both honest and the reason the registry exists. */}
+      <footer className="slit-top pt-6">
+        <Meta as="p" className="normal-case tracking-normal text-(--muted)">
+          Open source, AGPL-3.0 —{' '}
+          <a
+            href="https://github.com/zordhalo/overlap"
+            className="text-(--ink) underline underline-offset-4"
+          >
+            github.com/zordhalo/overlap
+          </a>
+          . Running on a free subdomain from{' '}
+          <a href="https://runs-on.dev" className="text-(--ink) underline underline-offset-4">
+            runs-on.dev
+          </a>
+          , a subdomain registry by{' '}
+          <a
+            href="https://advancelabs.dev"
+            className="text-(--ink) underline underline-offset-4"
+          >
+            Advance Labs
+          </a>
+          .
+        </Meta>
+      </footer>
     </main>
   );
 }

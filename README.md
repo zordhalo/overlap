@@ -9,6 +9,8 @@ asleep for two of them, and a day is gone. Overlap collapses that into one link:
 share it, everyone sets their hours once, and the page already knows when you
 can meet.
 
+**Live at [overlap.runs-on.dev](https://overlap.runs-on.dev).**
+
 Open source, AGPL-3.0. Self-host it or run it locally.
 
 ---
@@ -137,7 +139,9 @@ npm run build       # next build
 Stack: Next.js 16 (App Router) · React 19 · TypeScript strict · Tailwind v4 ·
 Drizzle + Postgres · Luxon · [cobe](https://github.com/shuding/cobe).
 
-Design language shared with [runs-on.dev](https://runs-on.dev).
+Design language shared with [runs-on.dev](https://runs-on.dev), which also
+provides the address: `overlap` is a claimed name in that subdomain registry,
+so this runs on a real domain rather than a `*.vercel.app` URL.
 
 ## Accessibility
 
