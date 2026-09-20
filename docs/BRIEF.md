@@ -39,23 +39,35 @@ Path alias: `@/*` → `./src/*`.
 
 ```
 src/lib/schedule/**      engine agent
-src/lib/ics/**           calendar agent
-src/lib/google/**        calendar agent
+src/lib/ics/**           pages agent
 src/lib/db/**            data agent
 drizzle/**               data agent
 src/lib/crypto.ts        data agent
 src/app/globals.css      design agent
 src/components/ui/**     design agent
 src/app/fonts/**         design agent
+src/components/globe-theme.ts             design agent
 src/components/globe.tsx globe agent
 src/components/timeline.tsx, slots.tsx   timeline agent
 src/app/**/page.tsx, layout.tsx, api/**  pages agent
+
+FROZEN, owned by the integrator, do not touch:
+src/lib/schedule/types.ts
+src/lib/time/clock.tsx
 ```
 
 ## The engine contract (everyone codes against this)
 
-`src/lib/schedule/types.ts` is the shared vocabulary. The engine agent writes
-it; everyone else imports from it and must not redefine these shapes.
+`src/lib/schedule/types.ts` **already exists and is FROZEN.** The integrator
+wrote it in Wave 0. No agent may modify, extend, or re-declare anything in it —
+import from it. If a shape you need is genuinely missing, say so in your final
+report; do not add it yourself. Read the real file rather than the excerpt
+below, which is abridged.
+
+`src/lib/time/clock.tsx` also already exists and is frozen: it exposes
+`useClock()` → `{ focusInstant, isLive, focus, resumeLive }` and
+`usePrefersReducedMotion()`. The globe and the timeline both subscribe to it so
+they behave as one instrument rather than two widgets.
 
 ```ts
 /** Half-open interval of absolute time, [start, end). Epoch milliseconds. */
@@ -134,3 +146,14 @@ onRender(state)`.
 - If you own tests, `npx vitest run` passes them.
 - Your final report states: what you built, what you deliberately left out, any
   file you wanted to touch but did not, and anything the integrator must wire up.
+
+## Cut from scope (do not build)
+
+**Google OAuth / Google Calendar API.** Removed in review: it cannot be
+exercised by morning because it needs a hand-created Cloud Console client, and
+dormant code still has to compile and not break the build. `src/lib/google/**`
+does not exist and must not be created. The calendar path is a pasted secret
+iCal URL plus `.ics` file upload, nothing else.
+
+**Fairness across meetings.** The scorer has no memory of who took the last
+early call. Never write UI copy claiming the burden rotates.
