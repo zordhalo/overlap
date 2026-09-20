@@ -26,8 +26,13 @@ Open source, AGPL-3.0. Self-host it or run it locally.
 - **A globe that carries information.** It is bound to the same clock as the
   timeline, so selecting a suggested slot rotates it to that moment. You see
   the daylight at the time you're considering, not a decorative spin.
+- **The decision is shared.** Picking a time writes it to the circle, so
+  everyone holding the link sees "Agreed: Tuesday 09:00 your time" instead of
+  one person downloading a calendar file and then re-announcing it in chat.
+  Any member can change it.
 - **Calendars, optionally.** Paste the secret iCal URL your provider already
-  gives you, or upload an `.ics`. Overlap reads busy/free and nothing else.
+  gives you. Overlap reads busy/free and nothing else, refreshing in the
+  background after the page has loaded so you never wait on someone's server.
 
 ## What it deliberately does not do
 
@@ -136,6 +141,25 @@ Under `prefers-reduced-motion` the globe stops rotating entirely rather than
 spinning slowly, and the overlap highlight becomes a static fill. The globe also
 renders its content as text for screen readers, and degrades to that list if
 WebGL is unavailable.
+
+## Known limitations
+
+Named rather than hidden:
+
+- **No rate limiting** on creating or joining circles. The control is slug
+  entropy (21 random characters), which makes enumeration infeasible, but a
+  determined person can create circles in bulk.
+- **`.ics` file upload is not wired up.** The parser handles it; only the
+  pasted-URL path has a UI.
+- **Recurring-rule support is a subset**: `DAILY`/`WEEKLY`/`MONTHLY` with
+  `INTERVAL`, `COUNT`, `UNTIL`, `BYDAY` and `EXDATE`. Anything else (yearly
+  rules, `BYMONTHDAY`, ordinal `BYDAY`) falls back to the base occurrence
+  rather than being dropped, so a busy block is never silently lost.
+- **All-day events are anchored to a UTC day**, not the member's local day,
+  because `VALUE=DATE` carries no timezone and the parser has no member zone.
+  A mostly-invisible difference that can be an hours-wide one near a date edge.
+- **Server-side validation errors** surface through the framework's default
+  error page rather than inline messages.
 
 ## License
 
