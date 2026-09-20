@@ -39,27 +39,44 @@ function initials(name: string): string {
  * Two-letter uppercase mono tag + tint colour. Identity must never depend
  * on colour alone (colour-blind members, greyscale screenshots), so the
  * tag is always rendered alongside the tint — never the tint by itself.
+ *
+ * Prefer passing `tag` and `color` straight off the `Member` record. Those
+ * are assigned server-side per circle, which matters twice over:
+ *
+ *  - `tag` is unique within a circle, while initials are not. Two members
+ *    named Matthew both derive "MA" and become indistinguishable — exactly
+ *    the case where the tag is carrying the whole identity signal.
+ *  - `color` is the same hex the globe hands cobe for that member's marker.
+ *    Deriving a tint from a hash of the id instead makes the same person a
+ *    different colour on the globe than in the timeline.
+ *
+ * `tint` and the hashed fallback remain for callers with no Member record.
  */
 export function MemberTag({
   name,
+  tag,
+  color,
   tint,
   className = '',
 }: {
   name: string;
-  tint: MemberTint;
+  /** The member's server-assigned tag, e.g. "IC". Unique within a circle. */
+  tag?: string;
+  /** The member's assigned hex, e.g. "#7fb2ff". Matches its globe marker. */
+  color?: string;
+  /** Only for callers without a Member record; hashed from the name. */
+  tint?: MemberTint;
   className?: string;
 }) {
+  const resolved = color ?? `var(--tint-${tint ?? tintForId(name)})`;
+  const label = (tag ?? initials(name)).toUpperCase().slice(0, 2);
   return (
     <span
       className={`meta inline-flex h-5 min-w-5 items-center justify-center rounded-[3px] px-1 text-[11px] leading-none ${className}`}
-      style={{
-        color: `var(--tint-${tint})`,
-        borderColor: `var(--tint-${tint})`,
-        border: '1px solid',
-      }}
+      style={{ color: resolved, borderColor: resolved, border: '1px solid' }}
       title={name}
     >
-      {initials(name)}
+      {label}
     </span>
   );
 }

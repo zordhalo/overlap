@@ -134,7 +134,14 @@ onRender(state)`.
 - `markers: { location: [lat, lng], size: number, color?: [r,g,b] }[]` — colors
   are 0..1 floats, not 0..255. Per-marker `color` overrides `markerColor`.
 - `arcs: { from: [lat,lng], to: [lat,lng] }[]` is supported.
-- `onRender(state)` runs every frame; mutate `state.phi` / `state.theta` there.
+- **There is NO `onRender` in cobe 2.0.1.** Both the published docs and cobe's
+  own README describe an `onRender(state)` frame callback. It does not exist in
+  this build — verified by reading `node_modules/cobe/dist/index.esm.js`, which
+  contains no animation loop at all. The globe renders once on `createGlobe` and
+  again only when you call `update(partial)` explicitly. Drive animation from a
+  `requestAnimationFrame` loop you own, calling `update({ phi, theta })`.
+  (This turned out better for the reduced-motion requirement: not starting the
+  loop means zero rendering, rather than a frozen loop still ticking.)
 - Canvas needs explicit `width`/`height` attributes at 2x the CSS size.
 - Always `destroy()` on unmount, and re-create on resize.
 
