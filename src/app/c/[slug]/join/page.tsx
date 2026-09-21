@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
-import { getCircleBySlug } from '@/lib/db/queries';
+import { getCircleBySlug, getMemberEmail } from '@/lib/db/queries';
+import { isGoogleConfigured } from '@/lib/google';
 import { groupedZones } from '@/lib/zones';
 import { getSessionMemberId } from '@/lib/session';
 import { JoinForm } from './JoinForm';
@@ -41,7 +42,10 @@ export default async function JoinPage({
         workStart: mine.workStart,
         workEnd: mine.workEnd,
         hasCalendar: mine.hasCalendar,
-        hasEmail: mine.hasEmail,
+        calendarSource: mine.calendarSource,
+        // Decrypted only for the member this browser is, and only on their own
+        // edit form. Everywhere else the circle sees `hasEmail` at most.
+        email: mine.hasEmail ? await getMemberEmail(mine.id) : null,
       }
     : undefined;
 
@@ -70,7 +74,12 @@ export default async function JoinPage({
               : 'Set yourself up once. You can come back and change any of this later from the same browser.'}
         </p>
       </div>
-      <JoinForm circleSlug={slug} zoneGroups={groupedZones()} existing={existing} />
+      <JoinForm
+        circleSlug={slug}
+        zoneGroups={groupedZones()}
+        existing={existing}
+        googleAvailable={isGoogleConfigured()}
+      />
     </main>
   );
 }

@@ -39,9 +39,10 @@ export type ExistingMember = {
   workStart: number;
   workEnd: number;
   hasCalendar: boolean;
-  /** Whether an address is already saved. The address itself is never sent
-   *  to the client: it is PII the rest of the circle has no business seeing. */
-  hasEmail?: boolean;
+  calendarSource?: 'google' | 'ics' | null;
+  /** This member's own saved recovery address. Sent only to their own edit
+   *  form, never to anyone else in the circle. */
+  email?: string | null;
 };
 
 /** Stored minutes-from-midnight back to the "HH:MM" an <input type=time> wants. */
@@ -55,10 +56,13 @@ export function JoinForm({
   circleSlug,
   zoneGroups,
   existing,
+  googleAvailable = false,
 }: {
   circleSlug: string;
   zoneGroups: GroupedZones;
   existing?: ExistingMember | undefined;
+  /** Whether this deployment has Google OAuth credentials. */
+  googleAvailable?: boolean;
 }) {
   // Computed once via useState's lazy initializer, not a render-time call —
   // avoids recomputing (and re-diffing the <select>) on every re-render.
@@ -177,16 +181,39 @@ export function JoinForm({
       <SlitFrame className="flex flex-col gap-3 p-6">
         <div className="flex items-baseline justify-between gap-3">
           <Meta as="div">Calendar (optional)</Meta>
-          {!calendarOpen && (
+          {existing?.calendarSource === 'google' ? (
+            <Meta as="span" style={{ color: 'var(--pulse)' }}>
+              Google Calendar connected
+            </Meta>
+          ) : googleAvailable && existing ? (
+            // A plain link, not a form button: the OAuth start is a GET that
+            // redirects to Google, and it has to be under /c/<slug>/ for the
+            // session cookie to reach it.
+            <a href={`/c/${circleSlug}/google`} className="btn-ghost">
+              Connect Google Calendar
+            </a>
+          ) : !calendarOpen ? (
             <GhostButton type="button" onClick={() => setCalendarOpen(true)}>
               Add a calendar
             </GhostButton>
-          )}
+          ) : null}
         </div>
         <p className="text-sm text-(--muted)">
           Overlap works fine without this — it just won&apos;t know about meetings already on your
           calendar. Add it any time.
+          {googleAvailable && !existing
+            ? ' Once you have joined, you can connect Google Calendar in one click.'
+            : null}
         </p>
+        {googleAvailable && existing && existing.calendarSource !== 'google' && !calendarOpen ? (
+          <button
+            type="button"
+            onClick={() => setCalendarOpen(true)}
+            className="meta self-start underline underline-offset-4 hover:text-(--ink)"
+          >
+            Not on Google? Paste an iCal link instead
+          </button>
+        ) : null}
         {calendarOpen && (
           <div className="flex flex-col gap-3 pt-2">
             <Field
@@ -228,13 +255,17 @@ export function JoinForm({
           name="email"
           type="email"
           autoComplete="email"
-          placeholder={existing?.hasEmail ? 'An address is saved — type to replace it' : 'you@example.com'}
+          placeholder="you@example.com"
+          defaultValue={existing?.email ?? ''}
           className="slit-input rounded-md px-3 py-2 text-(--ink)"
         />
-        {existing?.hasEmail ? (
-          <span className="meta text-(--muted)">
-            Leave blank to keep the address already saved.
-          </span>
+        {existing?.email ? (
+          <>
+            {/* Tells the action the address was on screen, so an empty field
+                means "remove it" rather than "we could not decrypt it". */}
+            <input type="hidden" name="emailShown" value="1" />
+            <span className="meta text-(--muted)">Clear the field to remove it.</span>
+          </>
         ) : null}
       </SlitFrame>
 

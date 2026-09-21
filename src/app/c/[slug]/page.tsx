@@ -179,7 +179,7 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
                   not offering it. */}
               {isGoogleConfigured() && currentRecord?.calendarSource !== 'google' ? (
                 <a
-                  href={`/api/google/start?slug=${encodeURIComponent(slug)}`}
+                  href={`/c/${slug}/google`}
                   className="meta underline underline-offset-4 hover:text-(--ink)"
                 >
                   Connect Google Calendar

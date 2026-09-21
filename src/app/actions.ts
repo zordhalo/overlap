@@ -14,6 +14,7 @@ import { looksLikeEmail, normaliseEmail } from '@/lib/email';
 import {
   addMember,
   clearChosenSlot,
+  clearMemberEmail,
   createCircle,
   getCircleBySlug,
   setChosenSlot,
@@ -150,7 +151,14 @@ export async function joinCircleAction(circleSlug: string, formData: FormData): 
     : undefined;
 
   if (existing) {
+    // The edit form is prefilled with the saved address, so the field is the
+    // whole truth: a value replaces it, and emptying it removes it. Only when
+    // the address was actually shown, though: an unreadable one renders as an
+    // empty field, and saving must not wipe something the user never saw.
     if (email) await setMemberEmail(existing.id, email);
+    else if (existing.hasEmail && formData.get('emailShown') === '1') {
+      await clearMemberEmail(existing.id);
+    }
     await updateMember(existing.id, {
       name,
       timezone,

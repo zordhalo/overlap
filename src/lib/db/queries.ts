@@ -538,6 +538,29 @@ export async function setMemberEmail(memberId: string, normalisedEmail: string):
     .where(eq(member.id, memberId));
 }
 
+/**
+ * Decrypts a member's own recovery address, so their edit form can show it.
+ *
+ * The caller must have established that `memberId` is the visitor (via the
+ * session cookie). It must never be used to build `MemberRecord`, which is
+ * rendered for the whole circle.
+ */
+export async function getMemberEmail(memberId: string): Promise<string | null> {
+  assertId(memberId, 'memberId');
+  const row = await db.query.member.findFirst({
+    where: eq(member.id, memberId),
+    columns: { emailEncrypted: true },
+  });
+  if (!row?.emailEncrypted) return null;
+  try {
+    return decrypt(row.emailEncrypted);
+  } catch {
+    // Unreadable (rotated key, corrupted row): show an empty field rather
+    // than failing the page. Saving a new address overwrites it.
+    return null;
+  }
+}
+
 export async function clearMemberEmail(memberId: string): Promise<void> {
   assertId(memberId, 'memberId');
   await db
