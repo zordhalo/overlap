@@ -29,6 +29,13 @@
       "when": 1789924260746,
       "tag": "0003_lame_morph",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789975491714,
+      "tag": "0004_jittery_dagger",
+      "breakpoints": true
     }
   ]
 }

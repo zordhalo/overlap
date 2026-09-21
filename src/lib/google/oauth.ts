@@ -8,9 +8,9 @@
  * surface rather than by our own discipline in not reading fields we were
  * handed.
  *
- * Writing the agreed meeting into someone's calendar needs a second scope,
- * and it is requested separately, only when that person first clicks "Add to
- * Google Calendar" (incremental authorisation). Two reasons it is not bundled
+ * Sending the circle's invite needs a second scope, and it is requested
+ * separately, only when that person first clicks "Send invite to everyone"
+ * (incremental authorisation). Two reasons it is not bundled
  * into the connect step:
  *
  *  - A write scope is a much larger ask than availability. Someone who only
@@ -22,7 +22,8 @@
  *
  * The scope is `calendar.events.owned` rather than `calendar.events`: it can
  * only touch calendars the person owns, never ones shared with them. Overlap
- * uses it to insert (or re-confirm) one event and never lists or reads events.
+ * uses it to create, restore or move the one invite event on the organizer's
+ * calendar, and never lists or reads events.
  *
  * The whole module is inert unless GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
  * are set; `isGoogleConfigured()` gates every entry point so a deployment
@@ -33,7 +34,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.freebusy';
 
-/** Write access to the person's own calendars, for "Add to Google Calendar". */
+/** Write access to the person's own calendars, for sending the invite. */
 export const GOOGLE_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
 
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -67,15 +68,15 @@ export function redirectUri(origin: string): string {
 }
 
 /**
- * What the callback should do once Google hands the user back. `add` is set
- * when the grant was asked for in order to put one meeting in the calendar,
- * so the event lands in the same click instead of after a second one.
+ * What the callback should do once Google hands the user back. `invite` is
+ * set when the grant was asked for in order to send the circle's invite, so
+ * it goes out in the same click instead of after a second one.
  */
 export type OAuthState = {
   slug: string;
   memberId: string;
   nonce: string;
-  add?: { start: number; end: number };
+  invite?: { start: number; end: number };
 };
 
 /**
@@ -115,17 +116,17 @@ export function verifyState(state: string): OAuthState | null {
       return null;
     }
     const result: OAuthState = { slug: p.slug, memberId: p.memberId, nonce: p.nonce };
-    if (p.add !== undefined) {
-      const add = p.add as { start?: unknown; end?: unknown } | null;
+    if (p.invite !== undefined) {
+      const invite = p.invite as { start?: unknown; end?: unknown } | null;
       if (
-        typeof add !== 'object' ||
-        add === null ||
-        !Number.isInteger(add.start) ||
-        !Number.isInteger(add.end)
+        typeof invite !== 'object' ||
+        invite === null ||
+        !Number.isInteger(invite.start) ||
+        !Number.isInteger(invite.end)
       ) {
         return null;
       }
-      result.add = { start: add.start as number, end: add.end as number };
+      result.invite = { start: invite.start as number, end: invite.end as number };
     }
     return result;
   } catch {

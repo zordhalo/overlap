@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { exchangeCode, GOOGLE_EVENTS_SCOPE, GOOGLE_SCOPE, isGoogleConfigured, verifyState } from '@/lib/google';
-import { addSlotToGoogle } from '@/lib/add-to-google';
+import { sendCircleInvite } from '@/lib/circle-invite';
 import { getCircleBySlug, setGoogleRefreshToken } from '@/lib/db/queries';
 
 /**
@@ -25,9 +25,9 @@ export async function GET(request: Request): Promise<Response> {
   const verifiedOnDeny = stateParam ? verifyState(stateParam) : null;
   if (denied) {
     // Declining the write scope is not declining availability: the existing
-    // connection is untouched, so say only that the event was not added.
+    // connection is untouched, so say only that the invite was not sent.
     const back = verifiedOnDeny
-      ? `/c/${verifiedOnDeny.slug}${verifiedOnDeny.add ? '?calendar=add-declined' : ''}`
+      ? `/c/${verifiedOnDeny.slug}${verifiedOnDeny.invite ? '?calendar=invite-declined' : ''}`
       : '/';
     return NextResponse.redirect(new URL(back, url.origin));
   }
@@ -69,22 +69,22 @@ export async function GET(request: Request): Promise<Response> {
   const keepsAvailability = scopes.length === 0 || scopes.includes(GOOGLE_SCOPE);
   if (keepsAvailability) await setGoogleRefreshToken(state.memberId, refreshToken);
 
-  if (!state.add) {
+  if (!state.invite) {
     return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=connected`, url.origin));
   }
 
-  // The reason this grant was asked for: put the meeting in the calendar now,
-  // so the click that started it is the only click it took.
+  // The reason this grant was asked for: send the invite now, so the click
+  // that started it is the only click it took.
   if (!scopes.includes(GOOGLE_EVENTS_SCOPE)) {
-    return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=add-declined`, url.origin));
+    return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=invite-declined`, url.origin));
   }
   if (!keepsAvailability) {
     // Nothing stored to write with. Rare enough (unticking availability while
     // granting writes) that failing plainly beats a special path.
-    return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=add-failed`, url.origin));
+    return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=invite-failed`, url.origin));
   }
   const base = (process.env.NEXT_PUBLIC_BASE_URL || url.origin).replace(/\/$/, '');
-  const outcome = await addSlotToGoogle(circle, state.memberId, state.add, base);
-  const notice = outcome.status === 'added' || outcome.status === 'already' ? 'added' : 'add-failed';
+  const outcome = await sendCircleInvite(circle, state.memberId, state.invite, base);
+  const notice = outcome.status === 'sent' ? 'invite-sent' : 'invite-failed';
   return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=${notice}`, url.origin));
 }

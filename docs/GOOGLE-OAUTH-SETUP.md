@@ -19,23 +19,33 @@ titles, attendees, or locations — there is nothing in the response to leak,
 log, or store. Overlap's promise that it records *that* you are busy and never
 *what* is enforced by Google's API surface, not by our own discipline.
 
-**"Add to Google Calendar" asks for a second one, the first time it is used:**
+**"Send invite to everyone" asks for a second one, the first time it is used:**
 
 ```
 https://www.googleapis.com/auth/calendar.events.owned
 ```
 
 This is incremental authorisation. Nobody sees it when they connect; it is
-requested only when a connected member clicks **Add to Google Calendar** on an
-agreed time, and the event is written as soon as they approve, so the click
-that asked is the only click it takes. After that, adding (including when they
-pick a time themselves) is instant.
+requested only when a connected member clicks **Send invite to everyone** on an
+agreed time, and the invite goes out as soon as they approve, so the click
+that asked is the only click it takes.
 
 `calendar.events.owned` rather than `calendar.events`: it covers only calendars
-the person owns, never calendars shared with them. Overlap uses it to insert
-one event on the primary calendar, with no attendees, under an id derived from
-the circle and the time, so repeat clicks never create duplicates. It never
+the person owns, never calendars shared with them. Overlap uses it to create
+one event on the sender's primary calendar (the organizer), with every member
+who opted in as a guest, and `sendUpdates=all` so Google emails the
+invitations. The id is derived from the circle and the time, so repeat clicks
+never invite anyone twice. Changing the time later patches that same event
+with the organizer's grant, so guests get one "updated invitation". It never
 lists or reads events.
+
+Picking a time writes nothing. Only the explicit send does, because it is the
+one action that reaches other people's inboxes.
+
+Guests are members who gave an email AND ticked "send me the calendar invite"
+on the join form. That is a separate opt-in from the recovery address, because
+a Google invite shows every guest's address to every other guest. Members who
+joined before the checkbox existed are opted out until they tick it.
 
 Members without Google connected are unaffected: they get the `.ics` download
 plus an "Open in Google Calendar" link that prefills Google's own event page
@@ -87,7 +97,7 @@ production" without Google's verification review** — which removes the 7-day
 refresh-token revocation entirely. There is no reason to leave it in Testing
 once you have confirmed the flow works.
 
-That still holds with "Add to Google Calendar". Publishing is what matters for
+That still holds with "Send invite to everyone". Publishing is what matters for
 the connect flow, and the write scope only adds the unverified-app warning on
 its own, separate consent screen (see above).
 
@@ -249,10 +259,10 @@ the publishing status after the change.
 
 ---
 
-## Follow-up: declare the write scope ("Add to Google Calendar")
+## Follow-up: declare the write scope ("Send invite to everyone")
 
 The app now also requests `calendar.events.owned`, the first time a member
-adds an agreed meeting straight to Google. Declaring it on the consent screen
+sends the circle's invite through Google. Declaring it on the consent screen
 is what lets it go through verification later. Hand this to a browser agent:
 
 ---

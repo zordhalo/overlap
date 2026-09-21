@@ -22,10 +22,10 @@ import type { MemberBands, Window } from '@/components/bands';
 import type { Member, Slot, SuggestResult } from '@/lib/schedule/types';
 import { googleTemplateUrl } from '@/lib/google/template';
 import {
-  addToGoogleCalendarAction,
   chooseSlotAction,
   clearChosenAction,
-  type AddToGoogleResult,
+  sendInviteAction,
+  type SendInviteResult,
 } from '@/app/actions';
 
 type CircleShellProps = {
@@ -45,10 +45,16 @@ type CircleShellProps = {
    *  told us rather than wherever the browser happens to be. */
   viewerZone?: string | null;
   /** Whether the person viewing has Google Calendar connected, which is what
-   *  turns "download a file" into "it is already in your calendar". */
+   *  lets them send the circle's invite. */
   googleConnected?: boolean;
   /** `?calendar=` from a return trip through Google, to say how it went. */
   calendarNotice?: string | null;
+  /** The member this browser is, if any. */
+  viewerId?: string | null;
+  /** The invite that went out, and whose calendar it lives on. */
+  invite?: { start: number; end: number; organizerId: string } | null;
+  /** Members an invite would reach (an address, and they opted in). Ids only. */
+  invitable?: string[];
 };
 
 export function CircleShell({
@@ -64,6 +70,9 @@ export function CircleShell({
   agreedByName = null,
   googleConnected = false,
   calendarNotice = null,
+  viewerId = null,
+  invite = null,
+  invitable = [],
 }: CircleShellProps) {
   return (
     <ClockProvider initialInstant={now}>
@@ -79,6 +88,9 @@ export function CircleShell({
         agreedByName={agreedByName}
         googleConnected={googleConnected}
         calendarNotice={calendarNotice}
+        viewerId={viewerId}
+        invite={invite}
+        invitable={invitable}
       />
     </ClockProvider>
   );
@@ -111,18 +123,25 @@ const CALENDAR_NOTICES: Record<string, string> = {
   connected: 'Google Calendar connected. Your busy time counts from the next load.',
   failed: 'Google Calendar did not connect. Try again.',
   'no-refresh-token': 'Google Calendar did not connect. Try again.',
-  added: 'Added to your Google Calendar.',
-  'add-declined': 'Not added: Google was not given permission to add events. The .ics download still works.',
-  'add-failed': 'Could not add it to Google Calendar. The .ics download still works.',
+  'invite-sent': 'Invite sent. Google is emailing everyone on it.',
+  'invite-declined':
+    'Invite not sent: Google was not given permission to add events. The .ics download still works.',
+  'invite-failed': 'Could not send the invite through Google. The .ics download still works.',
 };
 
-/** The Google add, per slot, so a state never leaks onto a different time. */
-type GoogleAdd =
-  | { key: string; status: 'adding' | 'redirecting' | 'failed' }
-  | { key: string; status: 'added'; htmlLink: string | null }
+/** Sending the invite, per slot, so a state never leaks onto a different time. */
+type Sending =
+  | { key: string; status: 'sending' | 'redirecting' | 'failed' }
+  | { key: string; status: 'sent'; htmlLink: string | null }
   | { key: string; status: 'needs-permission'; url: string };
 
 const slotKey = (slot: { start: number; end: number }) => `${slot.start}-${slot.end}`;
+
+/** "Matthew", "Matthew and Reeti", "Matthew, Reeti and Jan". */
+function nameList(names: string[]): string {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
 
 function CircleContent({
   slug,
@@ -136,6 +155,9 @@ function CircleContent({
   agreedByName,
   googleConnected,
   calendarNotice,
+  viewerId = null,
+  invite = null,
+  invitable = [],
 }: Omit<CircleShellProps, 'now'>) {
   const { focus } = useClock();
   // Seeded from the stored agreement, so the list shows the chosen time to
@@ -151,13 +173,7 @@ function CircleContent({
   // opened the link and chosen nothing.
   const [justActed, setJustActed] = useState(false);
 
-  // Arriving back from Google with the event already written: show the agreed
-  // time as added rather than offering the button that just did it.
-  const [googleAdd, setGoogleAdd] = useState<GoogleAdd | null>(() =>
-    calendarNotice === 'added' && agreed
-      ? { key: slotKey(agreed), status: 'added', htmlLink: null }
-      : null,
-  );
+  const [sending, setSending] = useState<Sending | null>(null);
   const [notice, setNotice] = useState<string | null>(
     calendarNotice ? (CALENDAR_NOTICES[calendarNotice] ?? null) : null,
   );
@@ -170,7 +186,7 @@ function CircleContent({
   }, []);
 
   // The notice is one-shot. Left in the URL, a reload (or a copied link) would
-  // announce "Added to your Google Calendar" again to someone who did nothing.
+  // announce "Invite sent" again to someone who did nothing.
   useEffect(() => {
     if (!calendarNotice) return;
     const url = new URL(window.location.href);
@@ -178,46 +194,52 @@ function CircleContent({
     window.history.replaceState(null, '', url.toString());
   }, [calendarNotice]);
 
+  const nameOf = (id: string | null) => members.find((m) => m.id === id)?.name ?? null;
+
+  // The invite lives on the organizer's calendar and moves with the time, so
+  // the organizer is whoever sent it first; until then, whoever sends it now.
+  const organizerId =
+    invite && members.some((m) => m.id === invite.organizerId) ? invite.organizerId : viewerId;
+  const others = members.filter((m) => m.id !== organizerId);
+  const guests = others.filter((m) => invitable.includes(m.id)).map((m) => m.name);
+  const unreachable = others.filter((m) => !invitable.includes(m.id)).map((m) => m.name);
+
   /**
-   * One click, straight into the member's own calendar. `interactive` is false
-   * when this runs as a side effect of picking a time: a pick must never send
-   * someone off to a Google consent screen they did not ask for, so a missing
-   * grant is surfaced as a button instead of a redirect.
+   * Only ever from an explicit click. Picking a time used to write it to
+   * Google as a side effect, so browsing the options filled someone's
+   * calendar with every time they looked at. Now picking proposes; this
+   * commits, and it is the one step that reaches anyone else's inbox.
    */
-  const addToGoogle = async (slot: Slot, interactive: boolean) => {
+  const sendInvite = async (slot: Slot) => {
     const key = slotKey(slot);
     setNotice(null);
-    setGoogleAdd({ key, status: 'adding' });
-    let outcome: AddToGoogleResult;
+    setSending({ key, status: 'sending' });
+    let outcome: SendInviteResult;
     try {
-      outcome = await addToGoogleCalendarAction(slug, slot.start, slot.end);
+      outcome = await sendInviteAction(slug, slot.start, slot.end);
     } catch {
       outcome = { status: 'failed' };
     }
     switch (outcome.status) {
-      case 'added':
-      case 'already':
-        setGoogleAdd({ key, status: 'added', htmlLink: outcome.htmlLink });
+      case 'sent':
+        setSending({ key, status: 'sent', htmlLink: outcome.htmlLink });
         return;
       case 'needs-permission':
-        if (interactive) {
-          setGoogleAdd({ key, status: 'redirecting' });
-          window.location.assign(outcome.url);
-        } else {
-          setGoogleAdd({ key, status: 'needs-permission', url: outcome.url });
-        }
+        setSending({ key, status: 'redirecting' });
+        window.location.assign(outcome.url);
         return;
       default:
-        setGoogleAdd({ key, status: 'failed' });
+        setSending({ key, status: 'failed' });
     }
   };
 
   // Reopening the question is the inverse of picking, and belongs beside it
-  // rather than in a separate banner: one panel owns the decision.
+  // rather than in a separate banner: one panel owns the decision. It leaves
+  // any invite alone: moving that is a deliberate send, not a side effect.
   const handleClear = () => {
     setJustActed(false);
     setSelected(undefined);
-    setGoogleAdd(null);
+    setSending(null);
     setNotice(null);
     startTransition(() => {
       void clearChosenAction(slug);
@@ -226,16 +248,13 @@ function CircleContent({
 
   // Picking a slot is the moment the globe earns its place (PLAN.md §6):
   // it sets the shared clock's focus, which rotates the terminator to show
-  // who is in daylight and who isn't at that time. It also gets the meeting
-  // into the picker's own calendar: written straight to Google when they have
-  // it connected and have allowed it, otherwise handed over as an .ics file.
+  // who is in daylight and who isn't at that time. It writes to no calendar:
+  // clicking through the options is how people compare them.
   const handlePick = (slot: Slot) => {
     setJustActed(true);
     setSelected(slot);
     setNotice(null);
     focus(slot.start);
-    if (googleConnected) void addToGoogle(slot, false);
-    else void downloadIcs(slug, slot);
     // Record it for the whole circle, not just this browser. Before this, the
     // only trace of a decision was a file in one person's downloads folder, so
     // the group still had to agree again somewhere else. It also supplies the
@@ -246,9 +265,41 @@ function CircleContent({
   };
 
   const calendarActions = (slot: Slot) => {
+    const key = slotKey(slot);
     const icsHref = `/api/ics?slug=${encodeURIComponent(slug)}&start=${slot.start}&end=${slot.end}`;
-    const state = googleAdd?.key === slotKey(slot) ? googleAdd : null;
+    const state = sending?.key === key ? sending : null;
+    const inviteHere = invite !== null && slotKey(invite) === key;
     const linkClass = 'meta underline underline-offset-4 hover:text-(--ink)';
+    const lineClass = 'meta w-full normal-case tracking-normal text-(--muted)';
+    const icsLink = (
+      <a href={icsHref} className={linkClass}>
+        Download .ics
+      </a>
+    );
+
+    if (inviteHere || state?.status === 'sent') {
+      const by = organizerId === viewerId ? 'you' : (nameOf(organizerId) ?? 'someone');
+      const link = state?.status === 'sent' ? state.htmlLink : null;
+      return (
+        <>
+          <span className="meta" style={{ color: 'var(--ok)' }}>
+            Invite sent by {by}
+          </span>
+          {link ? (
+            <a href={link} target="_blank" rel="noopener noreferrer" className={linkClass}>
+              Open it
+            </a>
+          ) : null}
+          {icsLink}
+          <p className={lineClass}>
+            {guests.length ? `Sent to ${nameList(guests)}. ` : ''}
+            {unreachable.length
+              ? `${nameList(unreachable)} ${unreachable.length === 1 ? 'has' : 'have'} no invite email set, so send them the .ics.`
+              : ''}
+          </p>
+        </>
+      );
+    }
 
     if (!googleConnected) {
       // No grant, so no direct write. Google's own prefilled event page is the
@@ -266,71 +317,56 @@ function CircleContent({
           <a href={templateHref} target="_blank" rel="noopener noreferrer" className={linkClass}>
             Open in Google Calendar
           </a>
+          <p className={lineClass}>
+            {invite
+              ? `${nameOf(invite.organizerId) ?? 'Someone'} sent an invite for a different time. Connect Google Calendar to move it here.`
+              : 'Connect Google Calendar to send everyone the invite.'}
+          </p>
         </>
       );
     }
 
-    if (state?.status === 'added') {
-      return (
-        <>
-          <span className="meta" style={{ color: 'var(--ok)' }}>
-            In your Google Calendar
-          </span>
-          {state.htmlLink ? (
-            <a href={state.htmlLink} target="_blank" rel="noopener noreferrer" className={linkClass}>
-              Open it
-            </a>
-          ) : null}
-        </>
-      );
-    }
-
-    const busy = state?.status === 'adding' || state?.status === 'redirecting';
+    const busy = state?.status === 'sending' || state?.status === 'redirecting';
     return (
       <>
-        <Pill
-          disabled={busy}
-          onClick={() => {
-            // Already known to need the grant: go straight there rather than
-            // asking the server a question it has just answered.
-            if (state?.status === 'needs-permission') {
-              setGoogleAdd({ key: state.key, status: 'redirecting' });
-              window.location.assign(state.url);
-            } else void addToGoogle(slot, true);
-          }}
-        >
-          {state?.status === 'adding'
-            ? 'Adding…'
+        <Pill disabled={busy} onClick={() => void sendInvite(slot)}>
+          {state?.status === 'sending'
+            ? 'Sending…'
             : state?.status === 'redirecting'
               ? 'Opening Google…'
-              : 'Add to Google Calendar'}
+              : invite
+                ? 'Move the invite to this time'
+                : 'Send invite to everyone'}
         </Pill>
-        <a href={icsHref} className={linkClass}>
-          Download .ics
-        </a>
+        {icsLink}
+        <p className={lineClass}>
+          {invite
+            ? `Everyone on ${organizerId === viewerId ? 'your' : `${nameOf(organizerId) ?? 'the'}’s`} invite gets the new time. `
+            : guests.length
+              ? `Google emails the invite to ${nameList(guests)}. `
+              : 'Nobody else has an invite email set yet, so it goes on your calendar only. '}
+          {unreachable.length
+            ? `${nameList(unreachable)} ${unreachable.length === 1 ? 'has' : 'have'} no invite email set.`
+            : ''}
+        </p>
       </>
     );
   };
 
-  const addState = selected && googleAdd?.key === slotKey(selected) ? googleAdd.status : null;
+  const sendState = selected && sending?.key === slotKey(selected) ? sending.status : null;
   const status = pending
     ? 'Saving this time for the circle…'
     : notice
       ? notice
-      : justActed && selected
-        ? !googleConnected
-          ? 'Saved for everyone, and downloaded to your calendar.'
-          : addState === 'added'
-            ? 'Saved for everyone, and added to your Google Calendar.'
-            : addState === 'needs-permission'
-              ? 'Saved for everyone. Allow Overlap to add it to your Google Calendar below.'
-              : addState === 'failed'
-                ? 'Saved for everyone. Could not reach Google Calendar; the .ics download still works.'
-                : 'Saved for everyone.'
-        : addState === 'failed'
-          ? 'Could not reach Google Calendar. The .ics download still works.'
-          : ' ';
-
+      : sendState === 'sent'
+        ? 'Invite sent. Google is emailing everyone on it.'
+        : sendState === 'failed'
+          ? 'Could not send the invite through Google. The .ics download still works.'
+          : justActed && selected
+            ? googleConnected
+              ? 'Saved for everyone. Send the invite once you are all set.'
+              : 'Saved for everyone.'
+            : ' ';
   return (
     <div
       className="grid grid-cols-1 gap-10

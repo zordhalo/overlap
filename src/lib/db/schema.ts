@@ -11,6 +11,7 @@ import {
   uuid,
   doublePrecision,
   bigint,
+  boolean,
   index,
   uniqueIndex,
   check,
@@ -43,6 +44,22 @@ export const circle = pgTable('circle', {
   chosenEnd: bigint('chosen_end', { mode: 'number' }),
   chosenBy: uuid('chosen_by'),
   chosenAt: timestamp('chosen_at', { withTimezone: true }),
+  /**
+   * The Google Calendar invite that went out to the circle, if one did.
+   *
+   * Picking a time is a proposal anyone can change with a click; sending the
+   * invite is the commitment, and it lives on ONE member's calendar (the
+   * organizer's). Remembering which event and whose calendar is what lets a
+   * later change of time move that same invite, so everyone gets "updated"
+   * rather than a second meeting stacked beside the first.
+   *
+   * `inviteStart`/`inviteEnd` are the time the invite currently says, which
+   * can differ from `chosenStart` while someone is looking at alternatives.
+   */
+  inviteEventId: text('invite_event_id'),
+  inviteOrganizerId: uuid('invite_organizer_id'),
+  inviteStart: bigint('invite_start', { mode: 'number' }),
+  inviteEnd: bigint('invite_end', { mode: 'number' }),
 }, (t) => [
   uniqueIndex('circle_slug_idx').on(t.slug),
   check('circle_duration_positive', sql`${t.durationMinutes} > 0 AND ${t.durationMinutes} <= 1440`),
@@ -100,6 +117,15 @@ export const member = pgTable('member', {
    * leaks without the key.
    */
   emailHash: text('email_hash'),
+  /**
+   * Whether the address above may be put on the circle's calendar invite.
+   *
+   * Separate from having an address at all: the address was first collected
+   * for recovery only, with a promise it would never be shown to the circle,
+   * and a Google invite shows every guest's address to every other guest.
+   * So it is an explicit opt-in, and rows from before it existed stay out.
+   */
+  invitesOptIn: boolean('invites_opt_in').notNull().default(false),
   tag: text('tag').notNull(),
   color: text('color').notNull(),
   lat: doublePrecision('lat'),

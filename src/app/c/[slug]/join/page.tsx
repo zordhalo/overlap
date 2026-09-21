@@ -46,6 +46,7 @@ export default async function JoinPage({
         // Decrypted only for the member this browser is, and only on their own
         // edit form. Everywhere else the circle sees `hasEmail` at most.
         email: mine.hasEmail ? await getMemberEmail(mine.id) : null,
+        invitesOptIn: mine.invitable,
       }
     : undefined;
 

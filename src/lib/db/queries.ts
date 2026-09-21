@@ -125,6 +125,8 @@ export type MemberRecord = {
    * email on it would be visible to the whole group.
    */
   hasEmail: boolean;
+  /** Has an address AND agreed to have it on the circle's calendar invite. */
+  invitable: boolean;
   /** Which connection a member is using, so the UI can name it accurately. */
   calendarSource: 'google' | 'ics' | null;
   /**
@@ -140,6 +142,9 @@ export type MemberRecord = {
 /** The time a circle agreed on. Null until somebody picks one. */
 export type ChosenSlot = { start: number; end: number; byMemberId: string | null };
 
+/** The Google invite that went out, and whose calendar it lives on. */
+export type CircleInvite = { eventId: string; organizerId: string; start: number; end: number };
+
 export type CircleWithMembers = {
   id: string;
   slug: string;
@@ -147,6 +152,7 @@ export type CircleWithMembers = {
   durationMinutes: number;
   horizonDays: number;
   chosen: ChosenSlot | null;
+  invite: CircleInvite | null;
   members: MemberRecord[];
 };
 
@@ -162,6 +168,19 @@ export async function getCircleBySlug(slug: string): Promise<CircleWithMembers |
   const chosen: ChosenSlot | null =
     circleRow.chosenStart !== null && circleRow.chosenEnd !== null
       ? { start: circleRow.chosenStart, end: circleRow.chosenEnd, byMemberId: circleRow.chosenBy }
+      : null;
+
+  const invite: CircleInvite | null =
+    circleRow.inviteEventId &&
+    circleRow.inviteOrganizerId &&
+    circleRow.inviteStart !== null &&
+    circleRow.inviteEnd !== null
+      ? {
+          eventId: circleRow.inviteEventId,
+          organizerId: circleRow.inviteOrganizerId,
+          start: circleRow.inviteStart,
+          end: circleRow.inviteEnd,
+        }
       : null;
 
   const memberRows = await db.query.member.findMany({ where: eq(member.circleId, circleRow.id) });
@@ -182,6 +201,7 @@ export async function getCircleBySlug(slug: string): Promise<CircleWithMembers |
         lat: m.lat,
         lng: m.lng,
         hasEmail: Boolean(m.emailHash),
+        invitable: Boolean(m.emailHash) && m.invitesOptIn,
         calendarSource: m.googleRefreshTokenEncrypted ? 'google' : m.icsUrlEncrypted ? 'ics' : null,
         hasCalendar: Boolean(m.icsUrlEncrypted || m.googleRefreshTokenEncrypted),
         busy: busyRows.map((b) => ({ start: b.startsAt.getTime(), end: b.endsAt.getTime() })),
@@ -196,6 +216,7 @@ export async function getCircleBySlug(slug: string): Promise<CircleWithMembers |
     durationMinutes: circleRow.durationMinutes,
     horizonDays: circleRow.horizonDays,
     chosen,
+    invite,
     members,
   };
 }
@@ -471,6 +492,56 @@ export async function clearChosenSlot(circleId: string): Promise<void> {
     .where(eq(circle.id, circleId));
 }
 
+/**
+ * Record the invite that went out (or where it moved to). The caller has just
+ * had Google confirm the event exists on `organizerId`'s calendar.
+ */
+export async function setCircleInvite(circleId: string, invite: CircleInvite): Promise<void> {
+  assertId(circleId, 'circleId');
+  assertId(invite.organizerId, 'organizerId');
+  await db
+    .update(circle)
+    .set({
+      inviteEventId: invite.eventId,
+      inviteOrganizerId: invite.organizerId,
+      inviteStart: invite.start,
+      inviteEnd: invite.end,
+    })
+    .where(eq(circle.id, circleId));
+}
+
+/**
+ * The addresses to put on the circle's invite: every member who opted in,
+ * except the organizer, whose calendar the event already lives on.
+ *
+ * Decrypted only on the way to Google. Never returned to a client; the page
+ * learns who will be invited from `MemberRecord.invitable`, a boolean.
+ */
+export async function inviteeEmails(
+  circleId: string,
+  organizerId: string,
+): Promise<{ memberId: string; name: string; email: string }[]> {
+  assertId(circleId, 'circleId');
+  const rows = await db.query.member.findMany({
+    where: and(eq(member.circleId, circleId), eq(member.invitesOptIn, true)),
+    columns: { id: true, name: true, emailEncrypted: true },
+  });
+  const out: { memberId: string; name: string; email: string }[] = [];
+  for (const row of rows) {
+    if (row.id === organizerId || !row.emailEncrypted) continue;
+    try {
+      out.push({ memberId: row.id, name: row.name, email: decrypt(row.emailEncrypted) });
+    } catch {
+      // Unreadable address: skip this guest rather than failing everyone's invite.
+    }
+  }
+  return out;
+}
+
+export async function setInvitesOptIn(memberId: string, optIn: boolean): Promise<void> {
+  assertId(memberId, 'memberId');
+  await db.update(member).set({ invitesOptIn: optIn }).where(eq(member.id, memberId));
+}
 
 /**
  * Store a member's Google refresh token, encrypted at rest.
