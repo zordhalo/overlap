@@ -190,6 +190,16 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
                   Google Calendar connected
                 </Meta>
               ) : null}
+              {/* No email means this cookie is the only thing that makes this
+                  browser "you". Lose it and there is no getting back in. */}
+              {!currentRecord?.hasEmail ? (
+                <Link
+                  href={`/c/${slug}/join`}
+                  className="meta underline underline-offset-4 hover:text-(--ink)"
+                >
+                  Add an email to sign in elsewhere
+                </Link>
+              ) : null}
               {/* Without this there is no way out of an identity this browser
                   already holds. The first thing anyone does before sending a
                   link to three colleagues is add those three themselves to see
@@ -203,9 +213,22 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
               </form>
             </div>
           ) : (
-            <Link href={`/c/${slug}/join`}>
-              <Pill>Add yourself</Pill>
-            </Link>
+            <div className="flex items-center gap-4">
+              {/* A member on a new device is a stranger to this page: identity
+                  is a per-browser cookie. Without this link, "Add yourself" was
+                  the only way forward, and it made a duplicate of them. */}
+              {members.length > 0 ? (
+                <Link
+                  href="/recover"
+                  className="meta underline underline-offset-4 hover:text-(--ink)"
+                >
+                  Already in this circle? Sign in
+                </Link>
+              ) : null}
+              <Link href={`/c/${slug}/join`}>
+                <Pill>Add yourself</Pill>
+              </Link>
+            </div>
           )}
           {/* Sharing only appears here once the circle is past the stage where
               the invite panel below is leading with it — two copy-link controls

@@ -7,6 +7,7 @@ import {
   throttleRecovery,
   type RecoverableCircle,
 } from '@/lib/db/queries';
+import { signSigninToken } from '@/lib/signin-token';
 import { isEmailConfigured, looksLikeEmail, normaliseEmail, sendEmail } from '@/lib/email';
 
 export type RecoverState = { status: 'idle' | 'sent' | 'invalid' | 'unavailable'; message?: string };
@@ -25,22 +26,35 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function renderEmail(circles: RecoverableCircle[], origin: string) {
+type EmailCircle = RecoverableCircle & { signinUrl: string; circleUrl: string };
+
+/**
+ * Two links per circle, because they do different jobs. The sign-in link
+ * makes this browser *you* again, so you can edit yourself, but it expires.
+ * The circle link never expires and is what to keep, but on its own it opens
+ * the circle as a visitor.
+ */
+function renderEmail(circles: EmailCircle[]) {
   const text = [
     'Here are the Overlap circles linked to this address.',
     '',
-    ...circles.map((c) => `${c.circleName} - ${origin}/c/${c.slug}`),
-    '',
-    'These links are the only way into each circle, so keep this email.',
+    ...circles.flatMap((c) => [
+      `${c.circleName} (you are ${c.memberName})`,
+      `  Sign in as yourself: ${c.signinUrl}`,
+      `  Circle link to keep: ${c.circleUrl}`,
+      '',
+    ]),
+    'The sign-in links work for 24 hours. After that, ask for a new email from the recovery page.',
     'If you did not ask for this, you can ignore it: nothing has changed.',
   ].join('\n');
 
   const items = circles
     .map(
       (c) =>
-        `<li style="margin:0 0 12px"><a href="${origin}/c/${c.slug}" style="color:#101010">${escapeHtml(
-          c.circleName,
-        )}</a><br><span style="color:#666;font-size:13px">${origin}/c/${c.slug}</span></li>`,
+        `<li style="margin:0 0 16px"><strong>${escapeHtml(c.circleName)}</strong>` +
+        `<span style="color:#666"> · you are ${escapeHtml(c.memberName)}</span><br>` +
+        `<a href="${c.signinUrl}" style="color:#101010">Sign in as yourself</a><br>` +
+        `<span style="color:#666;font-size:13px">Circle link to keep: ${c.circleUrl}</span></li>`,
     )
     .join('');
 
@@ -48,7 +62,7 @@ function renderEmail(circles: RecoverableCircle[], origin: string) {
     '<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#101010">',
     '<p>Here are the Overlap circles linked to this address.</p>',
     `<ul style="padding-left:18px">${items}</ul>`,
-    '<p style="color:#666;font-size:13px">These links are the only way into each circle, so keep this email. If you did not ask for this, you can ignore it: nothing has changed.</p>',
+    '<p style="color:#666;font-size:13px">The sign-in links work for 24 hours. After that, ask for a new email from the recovery page. If you did not ask for this, you can ignore it: nothing has changed.</p>',
     '</div>',
   ].join('');
 
@@ -99,7 +113,15 @@ export async function recoverAction(
     if (circles.length === 0) return sent;
 
     const origin = baseUrl(headerList.get('host'));
-    const { text, html } = renderEmail(circles, origin);
+    const { text, html } = renderEmail(
+      circles.map((c) => ({
+        ...c,
+        circleUrl: `${origin}/c/${c.slug}`,
+        signinUrl: `${origin}/c/${c.slug}/signin?t=${encodeURIComponent(
+          signSigninToken({ slug: c.slug, memberId: c.memberId, emailHash: hash }),
+        )}`,
+      })),
+    );
     await sendEmail({
       to: email,
       subject: circles.length === 1 ? 'Your Overlap circle' : 'Your Overlap circles',

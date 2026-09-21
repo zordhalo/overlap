@@ -561,6 +561,16 @@ export async function getMemberEmail(memberId: string): Promise<string | null> {
   }
 }
 
+/** The stored lookup hash, for checking a sign-in link is still current. */
+export async function getMemberEmailHash(memberId: string): Promise<string | null> {
+  assertId(memberId, 'memberId');
+  const row = await db.query.member.findFirst({
+    where: eq(member.id, memberId),
+    columns: { emailHash: true },
+  });
+  return row?.emailHash ?? null;
+}
+
 export async function clearMemberEmail(memberId: string): Promise<void> {
   assertId(memberId, 'memberId');
   await db
@@ -569,7 +579,14 @@ export async function clearMemberEmail(memberId: string): Promise<void> {
     .where(eq(member.id, memberId));
 }
 
-export type RecoverableCircle = { slug: string; circleName: string; memberName: string };
+export type RecoverableCircle = {
+  slug: string;
+  circleName: string;
+  memberName: string;
+  /** Which member the address belongs to, so the email can sign them in as
+   *  themselves rather than only reopening the circle. */
+  memberId: string;
+};
 
 /**
  * Every circle reachable from one address.
@@ -584,6 +601,7 @@ export async function circlesForEmailHash(hash: string): Promise<RecoverableCirc
       slug: circle.slug,
       circleName: circle.name,
       memberName: member.name,
+      memberId: member.id,
     })
     .from(member)
     .innerJoin(circle, eq(member.circleId, circle.id))
