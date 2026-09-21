@@ -307,11 +307,20 @@ export default async function CirclePage({
           timelineWindow={timelineWindow}
           result={result}
           now={now}
-        viewerZone={currentMember?.timezone ?? null}
-        agreed={circle.chosen}
-        agreedByName={chosenByName}
+          viewerZone={currentMember?.timezone ?? null}
+          agreed={circle.chosen}
+          agreedByName={chosenByName}
           googleConnected={isGoogleConfigured() && currentRecord?.calendarSource === 'google'}
           calendarNotice={calendarNotice}
+          viewerId={currentRecord?.id ?? null}
+          invite={
+            circle.invite
+              ? { start: circle.invite.start, end: circle.invite.end, organizerId: circle.invite.organizerId }
+              : null
+          }
+          // Who an invite would reach, as booleans: addresses never leave the
+          // server, but "Jan will not get it" is something the sender must see.
+          invitable={circle.members.filter((m) => m.invitable).map((m) => m.id)}
         />
       )}
     </main>

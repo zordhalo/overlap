@@ -19,6 +19,7 @@ import {
   createCircle,
   getCircleBySlug,
   setChosenSlot,
+  setInvitesOptIn,
   setMemberEmail,
   updateMember,
 } from '@/lib/db/queries';
@@ -28,7 +29,7 @@ import {
   setSessionMemberId,
 } from '@/lib/session';
 import { isValidTimezone, zoneInfo } from '@/lib/zones';
-import { addSlotToGoogle, type AddToGoogleOutcome } from '@/lib/add-to-google';
+import { sendCircleInvite, type InviteOutcome } from '@/lib/circle-invite';
 
 /** Fixed defaults for the one-screen create form, which asks only for a
  *  name. 30 minutes covers most standing syncs; a two-week horizon is long
@@ -137,6 +138,9 @@ export async function joinCircleAction(circleSlug: string, formData: FormData): 
   if (email && !looksLikeEmail(email)) {
     throw new Error('That does not look like an email address.');
   }
+  // Only meaningful with an address. Stored as given either way, so clearing
+  // the address and adding a new one later does not silently opt back in.
+  const invitesOptIn = Boolean(email) && formData.get('invitesOptIn') === '1';
 
   // Returning visitor: this browser already holds a session for a member of
   // THIS circle, so the join page is an edit, not a second sign-up. Without
@@ -160,6 +164,11 @@ export async function joinCircleAction(circleSlug: string, formData: FormData): 
     if (email) await setMemberEmail(existing.id, email);
     else if (existing.hasEmail && formData.get('emailShown') === '1') {
       await clearMemberEmail(existing.id);
+    }
+    // Same visibility rule as the address: only change it when the checkbox
+    // was actually on screen, which it is exactly when the address field is.
+    if (email || formData.get('emailShown') === '1') {
+      await setInvitesOptIn(existing.id, invitesOptIn);
     }
     await updateMember(existing.id, {
       name,
@@ -190,6 +199,7 @@ export async function joinCircleAction(circleSlug: string, formData: FormData): 
   });
 
   if (email) await setMemberEmail(id, email);
+  if (invitesOptIn) await setInvitesOptIn(id, true);
 
   await setSessionMemberId(circleSlug, id);
   // The first member has nobody to meet with yet, so their next action is not
@@ -232,26 +242,27 @@ export async function chooseSlotAction(
 }
 
 /**
- * What the "Add to Google Calendar" button gets back. `needs-permission`
- * carries the URL that asks Google for write access and then finishes the
- * add, so the client only has to navigate to it.
+ * What the "Send invite to everyone" button gets back. `needs-permission`
+ * carries the URL that asks Google for write access and then sends the invite,
+ * so the client only has to navigate to it.
  */
-export type AddToGoogleResult =
-  | Exclude<AddToGoogleOutcome, { status: 'needs-permission' }>
+export type SendInviteResult =
+  | Exclude<InviteOutcome, { status: 'needs-permission' }>
   | { status: 'needs-permission'; url: string };
 
 /**
- * Put a slot straight into the signed-in member's own Google Calendar.
+ * Send (or move) the circle's calendar invite, from the signed-in member.
  *
- * The member comes from the session cookie and must belong to this circle;
- * nobody can write into anyone else's calendar through this, because the only
- * refresh token it ever reads is the caller's own.
+ * The member comes from the session cookie and must belong to this circle and
+ * have Google connected. The event is created on their own calendar; the only
+ * other calendar ever written to is an existing organizer's, to move the one
+ * invite they already sent for this same circle.
  */
-export async function addToGoogleCalendarAction(
+export async function sendInviteAction(
   circleSlug: string,
   start: number,
   end: number,
-): Promise<AddToGoogleResult> {
+): Promise<SendInviteResult> {
   const circle = await getCircleBySlug(circleSlug);
   if (!circle) return { status: 'invalid' };
 
@@ -259,10 +270,11 @@ export async function addToGoogleCalendarAction(
   const me = circle.members.find((m) => m.id === sessionMemberId);
   if (!me || me.calendarSource !== 'google') return { status: 'not-connected' };
 
-  const outcome = await addSlotToGoogle(circle, me.id, { start, end }, await siteOrigin());
+  const outcome = await sendCircleInvite(circle, me.id, { start, end }, await siteOrigin());
   if (outcome.status === 'needs-permission') {
-    return { status: 'needs-permission', url: `/c/${circleSlug}/google?add=${start}-${end}` };
+    return { status: 'needs-permission', url: `/c/${circleSlug}/google?invite=${start}-${end}` };
   }
+  if (outcome.status === 'sent') revalidatePath(`/c/${circleSlug}`);
   return outcome;
 }
 

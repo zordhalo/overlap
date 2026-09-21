@@ -43,6 +43,8 @@ export type ExistingMember = {
   /** This member's own saved recovery address. Sent only to their own edit
    *  form, never to anyone else in the circle. */
   email?: string | null;
+  /** Whether that address may go on the circle's calendar invite. */
+  invitesOptIn?: boolean;
 };
 
 /** Stored minutes-from-midnight back to the "HH:MM" an <input type=time> wants. */
@@ -245,9 +247,8 @@ export function JoinForm({
         <div className="flex flex-col gap-1">
           <span className="meta">Email (optional)</span>
           <p className="text-sm text-(--muted)">
-            Only so you can get your circle links back if you lose them. A circle link is the
-            only way in, and there is no account or password behind it. Not used for anything
-            else, and never shown to anyone in the circle.
+            So you can get your circle links back if you lose them. A circle link is the only way
+            in, and there is no account or password behind it. Never shown on this page.
           </p>
         </div>
         <input
@@ -259,6 +260,23 @@ export function JoinForm({
           defaultValue={existing?.email ?? ''}
           className="slit-input rounded-md px-3 py-2 text-(--ink)"
         />
+        {/* Separate consent, because it is a different promise: a Google
+            invite lists every guest's address for every other guest. New
+            members start ticked; members from before this existed start
+            unticked, since they gave the address under the old promise. */}
+        <label className="flex items-start gap-3 text-sm text-(--muted)">
+          <input
+            type="checkbox"
+            name="invitesOptIn"
+            value="1"
+            defaultChecked={existing ? Boolean(existing.invitesOptIn) : true}
+            className="mt-1"
+          />
+          <span>
+            Also send me the calendar invite when the circle settles on a time. Google shows guests
+            each other&rsquo;s addresses on an invite, so the others will see this one there.
+          </span>
+        </label>
         {existing?.email ? (
           <>
             {/* Tells the action the address was on screen, so an empty field

@@ -10,4 +10,11 @@ export {
 } from './oauth';
 export { fetchGoogleBusy } from './freebusy';
 export { GOOGLE_EVENTS_SCOPE, accessTokenWithScopes, type OAuthState } from './oauth';
-export { addGoogleEvent, googleEventId, type AddEventResult, type GoogleEventInput } from './events';
+export {
+  sendGoogleInvite,
+  moveGoogleInvite,
+  googleEventId,
+  type InviteResult,
+  type MoveInviteResult,
+  type GoogleEventInput,
+} from './events';

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { addGoogleEvent, googleEventId } from './events';
+import { googleEventId, moveGoogleInvite, sendGoogleInvite } from './events';
 import { GOOGLE_EVENTS_SCOPE, GOOGLE_SCOPE, buildAuthUrl, signState, verifyState } from './oauth';
 import { googleTemplateUrl } from './template';
 
@@ -10,7 +10,13 @@ const INPUT = {
   summary: 'Co-founders',
   description: 'Scheduled with Overlap.',
   url: 'https://overlap.runs-on.dev/c/abc',
+  attendees: [
+    { email: 'matthew@example.com', name: 'Matthew' },
+    { email: 'reeti@example.com', name: 'Reeti' },
+  ],
 };
+
+const EVENTS = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -25,6 +31,7 @@ function mockGoogle(handlers: {
   insert?: () => Response;
   get?: () => Response;
   put?: () => Response;
+  patch?: () => Response;
 }) {
   const calls: { url: string; method: string; body: unknown }[] = [];
   global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -36,6 +43,7 @@ function mockGoogle(handlers: {
     if (method === 'POST' && handlers.insert) return handlers.insert();
     if (method === 'GET' && handlers.get) return handlers.get();
     if (method === 'PUT' && handlers.put) return handlers.put();
+    if (method === 'PATCH' && handlers.patch) return handlers.patch();
     throw new Error(`Unexpected ${method} ${url}`);
   }) as typeof fetch;
   return calls;
@@ -58,64 +66,66 @@ describe('googleEventId', () => {
   });
 });
 
-describe('addGoogleEvent', () => {
+function googleEnv() {
   const originalFetch = global.fetch;
-
   beforeEach(() => {
     vi.stubEnv('GOOGLE_CLIENT_ID', 'id');
     vi.stubEnv('GOOGLE_CLIENT_SECRET', 'secret');
   });
-
   afterEach(() => {
     global.fetch = originalFetch;
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
+}
+
+describe('sendGoogleInvite', () => {
+  googleEnv();
 
   it('asks for permission, without writing, when the grant is availability-only', async () => {
     const calls = mockGoogle({ token: () => json(200, { access_token: 'at', scope: GOOGLE_SCOPE }) });
-    await expect(addGoogleEvent('rt', INPUT)).resolves.toEqual({ status: 'needs-permission' });
+    await expect(sendGoogleInvite('rt', INPUT)).resolves.toEqual({ status: 'needs-permission' });
     expect(calls).toHaveLength(1);
   });
 
-  it('inserts one event on the primary calendar with a deterministic id', async () => {
+  it('creates one event with the guests on it, and has Google mail them', async () => {
     const calls = mockGoogle({
       token: withWrite,
       insert: () => json(200, { htmlLink: 'https://calendar.google.com/event?eid=x' }),
     });
-    await expect(addGoogleEvent('rt', INPUT)).resolves.toEqual({
-      status: 'added',
+    const id = googleEventId(INPUT.circleId, INPUT.start, INPUT.end);
+    await expect(sendGoogleInvite('rt', INPUT)).resolves.toEqual({
+      status: 'sent',
+      eventId: id,
       htmlLink: 'https://calendar.google.com/event?eid=x',
     });
     const insert = calls[1]!;
-    expect(insert.url).toBe('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+    expect(insert.url).toBe(`${EVENTS}?sendUpdates=all`);
     const body = insert.body as Record<string, unknown>;
-    expect(body.id).toBe(googleEventId(INPUT.circleId, INPUT.start, INPUT.end));
+    expect(body.id).toBe(id);
     expect(body.start).toEqual({ dateTime: '2026-09-22T13:15:00.000Z' });
     expect(body.end).toEqual({ dateTime: '2026-09-22T13:45:00.000Z' });
-    // Nobody is invited from here; each member writes only to their own calendar.
-    expect(body).not.toHaveProperty('attendees');
+    expect(body.attendees).toEqual([
+      { email: 'matthew@example.com', displayName: 'Matthew' },
+      { email: 'reeti@example.com', displayName: 'Reeti' },
+    ]);
   });
 
-  it('treats an existing event as already added instead of duplicating it', async () => {
+  it('overwrites an existing invite (a retry, or one deleted) instead of duplicating it', async () => {
     const calls = mockGoogle({
       token: withWrite,
       insert: () => json(409, { error: { message: 'The requested identifier already exists.' } }),
-      get: () => json(200, { status: 'confirmed', htmlLink: 'link' }),
-    });
-    await expect(addGoogleEvent('rt', INPUT)).resolves.toEqual({ status: 'already', htmlLink: 'link' });
-    expect(calls.map((c) => c.method)).toEqual(['POST', 'POST', 'GET']);
-  });
-
-  it('restores an event the person had deleted', async () => {
-    const calls = mockGoogle({
-      token: withWrite,
-      insert: () => json(409, {}),
-      get: () => json(200, { status: 'cancelled' }),
       put: () => json(200, { status: 'confirmed', htmlLink: 'restored' }),
     });
-    await expect(addGoogleEvent('rt', INPUT)).resolves.toEqual({ status: 'added', htmlLink: 'restored' });
-    expect((calls[3]!.body as { status: string }).status).toBe('confirmed');
+    const id = googleEventId(INPUT.circleId, INPUT.start, INPUT.end);
+    await expect(sendGoogleInvite('rt', INPUT)).resolves.toEqual({
+      status: 'sent',
+      eventId: id,
+      htmlLink: 'restored',
+    });
+    expect(calls.map((c) => c.method)).toEqual(['POST', 'POST', 'PUT']);
+    expect(calls[2]!.url).toBe(`${EVENTS}/${id}?sendUpdates=all`);
+    expect((calls[2]!.body as { status: string }).status).toBe('confirmed');
   });
 
   it('reports an insufficient-scope 403 as a permission problem', async () => {
@@ -123,12 +133,32 @@ describe('addGoogleEvent', () => {
       token: withWrite,
       insert: () => json(403, { error: { message: 'Request had insufficient authentication scopes.' } }),
     });
-    await expect(addGoogleEvent('rt', INPUT)).resolves.toEqual({ status: 'needs-permission' });
+    await expect(sendGoogleInvite('rt', INPUT)).resolves.toEqual({ status: 'needs-permission' });
   });
 
   it('throws on a server error rather than claiming success', async () => {
     mockGoogle({ token: withWrite, insert: () => json(503, {}) });
-    await expect(addGoogleEvent('rt', INPUT)).rejects.toThrow(/503/);
+    await expect(sendGoogleInvite('rt', INPUT)).rejects.toThrow(/503/);
+  });
+});
+
+describe('moveGoogleInvite', () => {
+  googleEnv();
+
+  it('patches the same event to the new time, notifying guests', async () => {
+    const calls = mockGoogle({ token: withWrite, patch: () => json(200, { htmlLink: 'moved' }) });
+    await expect(moveGoogleInvite('rt', 'evt123', INPUT)).resolves.toEqual({
+      status: 'sent',
+      eventId: 'evt123',
+      htmlLink: 'moved',
+    });
+    expect(calls[1]!.url).toBe(`${EVENTS}/evt123?sendUpdates=all`);
+    expect(calls[1]!.body).not.toHaveProperty('id');
+  });
+
+  it('says the event is gone when the organizer deleted it outright', async () => {
+    mockGoogle({ token: withWrite, patch: () => json(404, {}) });
+    await expect(moveGoogleInvite('rt', 'evt123', INPUT)).resolves.toEqual({ status: 'gone' });
   });
 });
 
@@ -140,12 +170,12 @@ describe('OAuth state and scopes', () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('round-trips the slot to add through signed state', () => {
-    const state = { slug: 's', memberId: 'm', nonce: 'n', add: { start: INPUT.start, end: INPUT.end } };
+  it('round-trips the slot to invite through signed state', () => {
+    const state = { slug: 's', memberId: 'm', nonce: 'n', invite: { start: INPUT.start, end: INPUT.end } };
     expect(verifyState(signState(state))).toEqual(state);
   });
 
-  it('still verifies state without an add intent', () => {
+  it('still verifies state without an invite intent', () => {
     expect(verifyState(signState({ slug: 's', memberId: 'm', nonce: 'n' }))).toEqual({
       slug: 's',
       memberId: 'm',
@@ -154,16 +184,16 @@ describe('OAuth state and scopes', () => {
   });
 
   it('rejects state whose slot was tampered with', () => {
-    const signed = signState({ slug: 's', memberId: 'm', nonce: 'n', add: { start: 1, end: 2 } });
+    const signed = signState({ slug: 's', memberId: 'm', nonce: 'n', invite: { start: 1, end: 2 } });
     const [body, mac] = signed.split('.');
     const forged = Buffer.from(
-      JSON.stringify({ slug: 's', memberId: 'm', nonce: 'n', add: { start: 1, end: 9 } }),
+      JSON.stringify({ slug: 's', memberId: 'm', nonce: 'n', invite: { start: 1, end: 9 } }),
     ).toString('base64url');
     expect(verifyState(`${forged}.${mac}`)).toBeNull();
     expect(body).not.toBe(forged);
   });
 
-  it('asks only for availability by default, and for both when adding', () => {
+  it('asks only for availability by default, and for both when inviting', () => {
     const connect = new URL(buildAuthUrl('https://x.test', 'st'));
     expect(connect.searchParams.get('scope')).toBe(GOOGLE_SCOPE);
     const add = new URL(buildAuthUrl('https://x.test', 'st', [GOOGLE_SCOPE, GOOGLE_EVENTS_SCOPE]));
