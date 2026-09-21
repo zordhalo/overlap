@@ -41,9 +41,11 @@ Members without Google connected are unaffected: they get the `.ics` download
 plus an "Open in Google Calendar" link that prefills Google's own event page
 and needs no grant at all.
 
-**This scope is almost certainly classed as sensitive** (every Calendar scope
-that can see events is). Consequences, until the app passes Google's
-verification review:
+**Confirmed, 2026-09-21: `calendar.events.owned` is classified SENSITIVE.**
+It is declared on the consent screen and appears under "Your sensitive scopes"
+marked "Approval required". Adding it raised Google's "Verification required"
+notice; nothing has been submitted. Consequences, until the app passes
+Google's verification review:
 
 - The write-access consent screen shows Google's "unverified app" warning.
   Members click **Advanced → Go to Overlap** to continue. The connect flow is
