@@ -80,7 +80,14 @@ export function Slots({
       if (existing) existing.slots.push(slot);
       else groups.set(key, { label: dt.toFormat('ccc d LLL'), slots: [slot] });
     }
-    return [...groups.values()];
+    // The engine hands slots over in rank order, and insertion order followed
+    // it, so an earlier but lower-ranked day was printed after later ones
+    // (Mon 21 Sep below Sun 4 Oct). Days read as a calendar, so sort them as
+    // one; "best" is still marked from slots[0], not from position. ISO dates
+    // sort chronologically as strings, and chips within a day go by time.
+    return [...groups.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([, group]) => ({ ...group, slots: group.slots.sort((a, b) => a.start - b.start) }));
   }, [result, zone]);
 
   if (result.kind === 'none') {
@@ -101,10 +108,14 @@ export function Slots({
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Days flow across the width rather than stacking one per row. When
+          every candidate falls on a different day (common over a long
+          horizon), a single column ran ten days deep, pushed the panel with
+          the only action below the fold, and left the rest of the row empty. */}
       <div
         role="radiogroup"
         aria-label="Suggested meeting times"
-        className="flex flex-col gap-4"
+        className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-x-4 gap-y-5"
       >
         {days.map((day) => (
           <div key={day.label} className="flex flex-col gap-2">
