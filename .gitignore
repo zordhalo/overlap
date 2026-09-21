@@ -14,3 +14,10 @@ coverage/
 # `env add`: that pattern also matches .env.example, the one env file that is
 # meant to be committed and is a new contributor's only guide to what the app
 # needs. The specific patterns above already cover every real secret file.
+
+# Agent tooling installed as a side effect of `vercel integration add neon`,
+# not authored here and not part of the product. Tool-specific, so a
+# contributor using anything else gets nothing from it.
+.agents/
+.claude/
+skills-lock.json
