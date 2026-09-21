@@ -9,6 +9,7 @@
  */
 
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { looksLikeEmail, normaliseEmail } from '@/lib/email';
 import {
@@ -27,6 +28,7 @@ import {
   setSessionMemberId,
 } from '@/lib/session';
 import { isValidTimezone, zoneInfo } from '@/lib/zones';
+import { addSlotToGoogle, type AddToGoogleOutcome } from '@/lib/add-to-google';
 
 /** Fixed defaults for the one-screen create form, which asks only for a
  *  name. 30 minutes covers most standing syncs; a two-week horizon is long
@@ -227,6 +229,52 @@ export async function chooseSlotAction(
 
   await setChosenSlot(circle.id, byMemberId, start, end);
   revalidatePath(`/c/${circleSlug}`);
+}
+
+/**
+ * What the "Add to Google Calendar" button gets back. `needs-permission`
+ * carries the URL that asks Google for write access and then finishes the
+ * add, so the client only has to navigate to it.
+ */
+export type AddToGoogleResult =
+  | Exclude<AddToGoogleOutcome, { status: 'needs-permission' }>
+  | { status: 'needs-permission'; url: string };
+
+/**
+ * Put a slot straight into the signed-in member's own Google Calendar.
+ *
+ * The member comes from the session cookie and must belong to this circle;
+ * nobody can write into anyone else's calendar through this, because the only
+ * refresh token it ever reads is the caller's own.
+ */
+export async function addToGoogleCalendarAction(
+  circleSlug: string,
+  start: number,
+  end: number,
+): Promise<AddToGoogleResult> {
+  const circle = await getCircleBySlug(circleSlug);
+  if (!circle) return { status: 'invalid' };
+
+  const sessionMemberId = await getSessionMemberId(circleSlug);
+  const me = circle.members.find((m) => m.id === sessionMemberId);
+  if (!me || me.calendarSource !== 'google') return { status: 'not-connected' };
+
+  const outcome = await addSlotToGoogle(circle, me.id, { start, end }, await siteOrigin());
+  if (outcome.status === 'needs-permission') {
+    return { status: 'needs-permission', url: `/c/${circleSlug}/google?add=${start}-${end}` };
+  }
+  return outcome;
+}
+
+/** The public origin, for the link back to the circle inside the event. Same
+ *  override the OAuth redirect URI honours, so both name the same host. */
+async function siteOrigin(): Promise<string> {
+  const configured = process.env.NEXT_PUBLIC_BASE_URL;
+  if (configured) return configured.replace(/\/$/, '');
+  const h = await headers();
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000';
+  const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
+  return `${proto}://${host}`;
 }
 
 /** Reopen the question. */

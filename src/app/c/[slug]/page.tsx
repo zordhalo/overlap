@@ -120,8 +120,17 @@ function MemberSummary({ member }: { member: Member }) {
   );
 }
 
-export default async function CirclePage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function CirclePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ calendar?: string | string[] }>;
+}) {
   const { slug } = await params;
+  // How a round trip through Google went, set by the OAuth callback.
+  const { calendar } = await searchParams;
+  const calendarNotice = typeof calendar === 'string' ? calendar : null;
   const circle = await getCircleBySlug(slug);
   if (!circle) notFound();
 
@@ -292,6 +301,7 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
       ) : (
         <CircleShell
           slug={slug}
+          circleName={circle.name}
           members={members}
           bands={bands}
           timelineWindow={timelineWindow}
@@ -300,6 +310,8 @@ export default async function CirclePage({ params }: { params: Promise<{ slug: s
         viewerZone={currentMember?.timezone ?? null}
         agreed={circle.chosen}
         agreedByName={chosenByName}
+          googleConnected={isGoogleConfigured() && currentRecord?.calendarSource === 'google'}
+          calendarNotice={calendarNotice}
         />
       )}
     </main>

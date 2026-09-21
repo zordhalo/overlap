@@ -23,7 +23,7 @@
  * selected fill) that read as controls on sight.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { DateTime } from 'luxon';
 import { GhostButton, Meta, MemberTag, Pill, SlitFrame } from '@/components/ui';
 import type { Member, MemberCost, Slot, SuggestResult } from '@/lib/schedule/types';
@@ -39,6 +39,10 @@ type SlotsProps = {
   agreedByName?: string | null;
   /** Reopen the question. Omitted on the landing-page demo. */
   onClear?: (() => void) | undefined;
+  /** How the agreed time gets into someone's calendar. Owned by the caller,
+   *  because only the circle page knows whether this person has Google
+   *  connected. Omitted, the panel offers the plain re-pick/.ics action. */
+  calendarActions?: ((slot: Slot) => ReactNode) | undefined;
 };
 
 export function Slots({
@@ -49,6 +53,7 @@ export function Slots({
   viewerZone = null,
   agreedByName = null,
   onClear,
+  calendarActions,
 }: SlotsProps) {
   const membersById = useMemo(() => {
     const map = new Map<string, Member>();
@@ -146,6 +151,7 @@ export function Slots({
           agreedByName={agreedByName}
           onPick={onPick}
           onClear={onClear}
+          calendarActions={calendarActions}
         />
       ) : null}
     </div>
@@ -214,6 +220,7 @@ function Detail({
   agreedByName,
   onPick,
   onClear,
+  calendarActions,
 }: {
   slot: Slot;
   members: Member[];
@@ -223,6 +230,7 @@ function Detail({
   agreedByName: string | null;
   onPick: (slot: Slot) => void;
   onClear?: (() => void) | undefined;
+  calendarActions?: ((slot: Slot) => ReactNode) | undefined;
 }) {
   const burden = burdenCopy(slot.costs, membersById);
   const headline = DateTime.fromMillis(slot.start, { zone }).toFormat('ccc d LLL, HH:mm');
@@ -259,7 +267,11 @@ function Detail({
       <div className="flex flex-wrap items-center gap-3">
         {agreed ? (
           <>
-            <Pill onClick={() => onPick(slot)}>Add to calendar</Pill>
+            {calendarActions ? (
+              calendarActions(slot)
+            ) : (
+              <Pill onClick={() => onPick(slot)}>Add to calendar</Pill>
+            )}
             {onClear ? <GhostButton onClick={onClear}>Pick a different time</GhostButton> : null}
           </>
         ) : (

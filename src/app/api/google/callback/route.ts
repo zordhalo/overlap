@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { exchangeCode, isGoogleConfigured, verifyState } from '@/lib/google';
+import { exchangeCode, GOOGLE_EVENTS_SCOPE, GOOGLE_SCOPE, isGoogleConfigured, verifyState } from '@/lib/google';
+import { addSlotToGoogle } from '@/lib/add-to-google';
 import { getCircleBySlug, setGoogleRefreshToken } from '@/lib/db/queries';
 
 /**
@@ -23,7 +24,11 @@ export async function GET(request: Request): Promise<Response> {
   const stateParam = url.searchParams.get('state');
   const verifiedOnDeny = stateParam ? verifyState(stateParam) : null;
   if (denied) {
-    const back = verifiedOnDeny ? `/c/${verifiedOnDeny.slug}` : '/';
+    // Declining the write scope is not declining availability: the existing
+    // connection is untouched, so say only that the event was not added.
+    const back = verifiedOnDeny
+      ? `/c/${verifiedOnDeny.slug}${verifiedOnDeny.add ? '?calendar=add-declined' : ''}`
+      : '/';
     return NextResponse.redirect(new URL(back, url.origin));
   }
 
@@ -43,8 +48,9 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   let refreshToken: string | null;
+  let scopes: string[];
   try {
-    ({ refreshToken } = await exchangeCode(code, url.origin));
+    ({ refreshToken, scopes } = await exchangeCode(code, url.origin));
   } catch {
     return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=failed`, url.origin));
   }
@@ -57,6 +63,28 @@ export async function GET(request: Request): Promise<Response> {
     return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=no-refresh-token`, url.origin));
   }
 
-  await setGoogleRefreshToken(state.memberId, refreshToken);
-  return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=connected`, url.origin));
+  // With granular consent a person can untick scopes. A token without the
+  // availability scope would silently stop busy sync, so it only replaces the
+  // stored one when it still carries that scope (or Google did not say).
+  const keepsAvailability = scopes.length === 0 || scopes.includes(GOOGLE_SCOPE);
+  if (keepsAvailability) await setGoogleRefreshToken(state.memberId, refreshToken);
+
+  if (!state.add) {
+    return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=connected`, url.origin));
+  }
+
+  // The reason this grant was asked for: put the meeting in the calendar now,
+  // so the click that started it is the only click it took.
+  if (!scopes.includes(GOOGLE_EVENTS_SCOPE)) {
+    return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=add-declined`, url.origin));
+  }
+  if (!keepsAvailability) {
+    // Nothing stored to write with. Rare enough (unticking availability while
+    // granting writes) that failing plainly beats a special path.
+    return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=add-failed`, url.origin));
+  }
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || url.origin).replace(/\/$/, '');
+  const outcome = await addSlotToGoogle(circle, state.memberId, state.add, base);
+  const notice = outcome.status === 'added' || outcome.status === 'already' ? 'added' : 'add-failed';
+  return NextResponse.redirect(new URL(`/c/${state.slug}?calendar=${notice}`, url.origin));
 }

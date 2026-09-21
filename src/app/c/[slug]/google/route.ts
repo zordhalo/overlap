@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { buildAuthUrl, isGoogleConfigured, signState } from '@/lib/google';
+import {
+  buildAuthUrl,
+  GOOGLE_EVENTS_SCOPE,
+  GOOGLE_SCOPE,
+  isGoogleConfigured,
+  signState,
+  type OAuthState,
+} from '@/lib/google';
+import { isValidSlot } from '@/lib/add-to-google';
 import { getCircleBySlug } from '@/lib/db/queries';
 import { getSessionMemberId } from '@/lib/session';
 
@@ -20,6 +28,11 @@ import { getSessionMemberId } from '@/lib/session';
  *
  * The callback stays at `/api/google/callback`: it identifies the member from
  * the signed `state`, not the cookie, and it is the URI registered with Google.
+ *
+ * `?add=<start>-<end>` is the "Add to Google Calendar" path for someone whose
+ * grant does not yet allow writing. It asks for the events scope on top of the
+ * existing one, and carries the slot in the signed state so the callback can
+ * put the meeting in the calendar without a second click.
  */
 export async function GET(
   request: Request,
@@ -47,6 +60,18 @@ export async function GET(
     return NextResponse.redirect(new URL(`/c/${slug}/join`, url.origin));
   }
 
-  const state = signState({ slug, memberId, nonce: randomUUID() });
-  return NextResponse.redirect(buildAuthUrl(url.origin, state));
+  const add = parseAdd(url.searchParams.get('add'));
+  const state: OAuthState = { slug, memberId, nonce: randomUUID(), ...(add ? { add } : {}) };
+  const scopes = add ? [GOOGLE_SCOPE, GOOGLE_EVENTS_SCOPE] : [GOOGLE_SCOPE];
+  return NextResponse.redirect(buildAuthUrl(url.origin, signState(state), scopes));
+}
+
+/** `<start>-<end>` in epoch ms. Anything malformed is ignored, which turns the
+ *  request back into a plain connect rather than an error page. */
+function parseAdd(raw: string | null): { start: number; end: number } | null {
+  const match = raw ? /^(\d+)-(\d+)$/.exec(raw) : null;
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  return isValidSlot(start, end) ? { start, end } : null;
 }

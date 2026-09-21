@@ -1,16 +1,28 @@
 /**
- * Google OAuth, scoped as narrowly as the product allows.
+ * Google OAuth, scoped as narrowly as each feature allows.
  *
- * Overlap asks for exactly one scope: `calendar.freebusy`. That endpoint
- * returns busy intervals and nothing else — no titles, no attendees, no
- * locations — which means the privacy promise in the README ("Overlap records
- * *that* you are busy, never *what*") is enforced by Google's API surface
- * rather than by our own discipline in not reading fields we were handed.
+ * Connecting a calendar asks for exactly one scope: `calendar.freebusy`. That
+ * endpoint returns busy intervals and nothing else — no titles, no attendees,
+ * no locations — which means the privacy promise in the README ("Overlap
+ * records *that* you are busy, never *what*") is enforced by Google's API
+ * surface rather than by our own discipline in not reading fields we were
+ * handed.
  *
- * Writing the agreed meeting into a calendar deliberately does NOT go through
- * OAuth. That would need `calendar.events`, a far broader grant ("view and
- * edit events on all your calendars"), to do something the existing .ics
- * download already does on every platform. A second scope is not worth it.
+ * Writing the agreed meeting into someone's calendar needs a second scope,
+ * and it is requested separately, only when that person first clicks "Add to
+ * Google Calendar" (incremental authorisation). Two reasons it is not bundled
+ * into the connect step:
+ *
+ *  - A write scope is a much larger ask than availability. Someone who only
+ *    wants their busy time counted should never be shown it.
+ *  - Event scopes are classed as sensitive by Google. Until the app passes
+ *    verification, requesting one shows an "unverified app" interstitial, and
+ *    keeping it off the connect path keeps that screen off the path everyone
+ *    takes.
+ *
+ * The scope is `calendar.events.owned` rather than `calendar.events`: it can
+ * only touch calendars the person owns, never ones shared with them. Overlap
+ * uses it to insert (or re-confirm) one event and never lists or reads events.
  *
  * The whole module is inert unless GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
  * are set; `isGoogleConfigured()` gates every entry point so a deployment
@@ -20,6 +32,9 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.freebusy';
+
+/** Write access to the person's own calendars, for "Add to Google Calendar". */
+export const GOOGLE_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
 
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
@@ -52,11 +67,23 @@ export function redirectUri(origin: string): string {
 }
 
 /**
+ * What the callback should do once Google hands the user back. `add` is set
+ * when the grant was asked for in order to put one meeting in the calendar,
+ * so the event lands in the same click instead of after a second one.
+ */
+export type OAuthState = {
+  slug: string;
+  memberId: string;
+  nonce: string;
+  add?: { start: number; end: number };
+};
+
+/**
  * `state` carries which member is connecting, signed so the callback cannot be
  * tricked into attaching someone else's Google account to a member of our
  * choosing. It doubles as the CSRF token OAuth requires.
  */
-export function signState(payload: { slug: string; memberId: string; nonce: string }): string {
+export function signState(payload: OAuthState): string {
   const secret = process.env.SESSION_SECRET;
   if (!secret) throw new Error('SESSION_SECRET is not set.');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -64,9 +91,7 @@ export function signState(payload: { slug: string; memberId: string; nonce: stri
   return `${body}.${mac}`;
 }
 
-export function verifyState(
-  state: string,
-): { slug: string; memberId: string; nonce: string } | null {
+export function verifyState(state: string): OAuthState | null {
   const secret = process.env.SESSION_SECRET;
   if (!secret) return null;
   const separator = state.lastIndexOf('.');
@@ -84,28 +109,47 @@ export function verifyState(
 
   try {
     const parsed: unknown = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof (parsed as { slug?: unknown }).slug === 'string' &&
-      typeof (parsed as { memberId?: unknown }).memberId === 'string' &&
-      typeof (parsed as { nonce?: unknown }).nonce === 'string'
-    ) {
-      return parsed as { slug: string; memberId: string; nonce: string };
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const p = parsed as Record<string, unknown>;
+    if (typeof p.slug !== 'string' || typeof p.memberId !== 'string' || typeof p.nonce !== 'string') {
+      return null;
     }
-    return null;
+    const result: OAuthState = { slug: p.slug, memberId: p.memberId, nonce: p.nonce };
+    if (p.add !== undefined) {
+      const add = p.add as { start?: unknown; end?: unknown } | null;
+      if (
+        typeof add !== 'object' ||
+        add === null ||
+        !Number.isInteger(add.start) ||
+        !Number.isInteger(add.end)
+      ) {
+        return null;
+      }
+      result.add = { start: add.start as number, end: add.end as number };
+    }
+    return result;
   } catch {
     return null;
   }
 }
 
-export function buildAuthUrl(origin: string, state: string): string {
+/**
+ * `scopes` defaults to the connect grant. Passing more asks for them on top of
+ * whatever was granted before (`include_granted_scopes`), so the resulting
+ * refresh token covers both and replaces the stored one without losing
+ * availability sync.
+ */
+export function buildAuthUrl(
+  origin: string,
+  state: string,
+  scopes: readonly string[] = [GOOGLE_SCOPE],
+): string {
   const { clientId } = credentials();
   const url = new URL(AUTH_ENDPOINT);
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', redirectUri(origin));
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', GOOGLE_SCOPE);
+  url.searchParams.set('scope', scopes.join(' '));
   // `offline` is what returns a refresh token at all, and `consent` forces the
   // consent screen every time. Without the latter, a user who has authorised
   // before gets no new refresh token, so reconnecting after a revoke silently
@@ -117,7 +161,18 @@ export function buildAuthUrl(origin: string, state: string): string {
   return url.toString();
 }
 
-type TokenResponse = { access_token?: string; refresh_token?: string; expires_in?: number };
+type TokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  /** Space-separated. What the user actually approved, which with granular
+   *  consent can be less than what was asked for. */
+  scope?: string;
+};
+
+function parseScopes(scope: string | undefined): string[] {
+  return scope ? scope.split(/\s+/).filter(Boolean) : [];
+}
 
 async function postToken(body: URLSearchParams): Promise<TokenResponse> {
   const response = await fetch(TOKEN_ENDPOINT, {
@@ -139,7 +194,7 @@ async function postToken(body: URLSearchParams): Promise<TokenResponse> {
 export async function exchangeCode(
   code: string,
   origin: string,
-): Promise<{ refreshToken: string | null; accessToken: string }> {
+): Promise<{ refreshToken: string | null; accessToken: string; scopes: string[] }> {
   const { clientId, clientSecret } = credentials();
   const json = await postToken(
     new URLSearchParams({
@@ -151,10 +206,25 @@ export async function exchangeCode(
     }),
   );
   if (!json.access_token) throw new Error('Google returned no access token.');
-  return { refreshToken: json.refresh_token ?? null, accessToken: json.access_token };
+  return {
+    refreshToken: json.refresh_token ?? null,
+    accessToken: json.access_token,
+    scopes: parseScopes(json.scope),
+  };
 }
 
 export async function accessTokenFromRefresh(refreshToken: string): Promise<string> {
+  return (await accessTokenWithScopes(refreshToken)).accessToken;
+}
+
+/**
+ * An access token plus the scopes the grant behind it carries. Google reports
+ * them on every refresh, which is how "may Overlap write to this calendar?" is
+ * answered without storing a second copy of the grant that could drift.
+ */
+export async function accessTokenWithScopes(
+  refreshToken: string,
+): Promise<{ accessToken: string; scopes: string[] }> {
   const { clientId, clientSecret } = credentials();
   const json = await postToken(
     new URLSearchParams({
@@ -165,5 +235,5 @@ export async function accessTokenFromRefresh(refreshToken: string): Promise<stri
     }),
   );
   if (!json.access_token) throw new Error('Google returned no access token on refresh.');
-  return json.access_token;
+  return { accessToken: json.access_token, scopes: parseScopes(json.scope) };
 }

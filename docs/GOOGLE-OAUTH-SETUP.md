@@ -6,7 +6,9 @@ them to paste a secret iCal URL. This is optional: with `GOOGLE_CLIENT_ID` and
 
 ## What Overlap asks Google for
 
-**One scope, and only one:**
+Two scopes, asked for at two different moments.
+
+**Connecting a calendar asks for one scope, and only one:**
 
 ```
 https://www.googleapis.com/auth/calendar.freebusy
@@ -17,10 +19,43 @@ titles, attendees, or locations — there is nothing in the response to leak,
 log, or store. Overlap's promise that it records *that* you are busy and never
 *what* is enforced by Google's API surface, not by our own discipline.
 
-Adding the agreed meeting to a calendar deliberately does **not** use OAuth.
-That would require `calendar.events` ("view and edit events on all your
-calendars") to do something the `.ics` download already does everywhere. One
-narrow scope beats two.
+**"Add to Google Calendar" asks for a second one, the first time it is used:**
+
+```
+https://www.googleapis.com/auth/calendar.events.owned
+```
+
+This is incremental authorisation. Nobody sees it when they connect; it is
+requested only when a connected member clicks **Add to Google Calendar** on an
+agreed time, and the event is written as soon as they approve, so the click
+that asked is the only click it takes. After that, adding (including when they
+pick a time themselves) is instant.
+
+`calendar.events.owned` rather than `calendar.events`: it covers only calendars
+the person owns, never calendars shared with them. Overlap uses it to insert
+one event on the primary calendar, with no attendees, under an id derived from
+the circle and the time, so repeat clicks never create duplicates. It never
+lists or reads events.
+
+Members without Google connected are unaffected: they get the `.ics` download
+plus an "Open in Google Calendar" link that prefills Google's own event page
+and needs no grant at all.
+
+**This scope is almost certainly classed as sensitive** (every Calendar scope
+that can see events is). Consequences, until the app passes Google's
+verification review:
+
+- The write-access consent screen shows Google's "unverified app" warning.
+  Members click **Advanced → Go to Overlap** to continue. The connect flow is
+  unaffected, because it still asks only for `calendar.freebusy`.
+- Google caps an unverified app requesting sensitive scopes at 100 users
+  granting them, over the app's lifetime.
+- Some Workspace admins block unverified apps outright. Those members still
+  have the `.ics` download and the prefilled Google link.
+
+For a handful of co-founders none of this blocks anything. Before it is
+opened wider, submit the app for verification; see the follow-up prompt at
+the end of this file.
 
 ## Read this before you start
 
@@ -49,6 +84,10 @@ only scope requested is non-sensitive, **this app can be switched to "In
 production" without Google's verification review** — which removes the 7-day
 refresh-token revocation entirely. There is no reason to leave it in Testing
 once you have confirmed the flow works.
+
+That still holds with "Add to Google Calendar". Publishing is what matters for
+the connect flow, and the write scope only adds the unverified-app warning on
+its own, separate consent screen (see above).
 
 ---
 
@@ -202,5 +241,33 @@ days.
 
 Report back: the full list of redirect URIs on the client after saving, and
 the publishing status after the change.
+
+---
+
+
+---
+
+## Follow-up: declare the write scope ("Add to Google Calendar")
+
+The app now also requests `calendar.events.owned`, the first time a member
+adds an agreed meeting straight to Google. Declaring it on the consent screen
+is what lets it go through verification later. Hand this to a browser agent:
+
+---
+
+Go to `https://console.cloud.google.com/auth/scopes` (it may be labelled
+**Google Auth Platform → Data Access**) with the **Overlap** project selected
+in the top bar.
+
+Click **Add or remove scopes**. In the filter box paste:
+`https://www.googleapis.com/auth/calendar.events.owned`
+Tick it and click **Update**, then **Save**. Leave `calendar.freebusy` in place.
+
+**Report back the exact label Google shows for the new scope: "Non-sensitive",
+"Sensitive", or "Restricted".** If it is Sensitive, tell me what the page says
+about verification (whether a "Prepare for verification" or similar button
+appears), but do not submit anything.
+
+Do not change the publishing status.
 
 ---
