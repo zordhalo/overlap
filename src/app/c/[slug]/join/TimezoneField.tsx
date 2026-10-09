@@ -90,6 +90,13 @@ export function TimezoneField({
 
   const suggested = reading.kind === 'zone' && reading.zone !== zone ? reading.zone : null;
   const agrees = reading.kind === 'zone' && reading.zone === zone;
+  // A refusal is permanent until the member resets it in their browser, so
+  // offering "try again" there would be offering a button that does nothing.
+  const retryable = reading.kind === 'error' && reading.error !== 'denied';
+  // Three different answers is possible: a returning member's saved zone,
+  // a device clock set to something else again, and the location. Only
+  // mention the clock when it is actually a third voice in the room.
+  const clockDiffers = suggested !== null && deviceZone !== zone && deviceZone !== suggested;
 
   return (
     <div className="flex flex-col gap-2">
@@ -97,9 +104,9 @@ export function TimezoneField({
         <label htmlFor="timezone" className="meta">
           Timezone
         </label>
-        {canAsk && reading.kind === 'idle' && (
+        {canAsk && (reading.kind === 'idle' || retryable) && (
           <GhostButton type="button" onClick={() => void locate()}>
-            Check my location
+            {reading.kind === 'error' ? 'Try again' : 'Check my location'}
           </GhostButton>
         )}
         {reading.kind === 'locating' && <Meta as="span">Locating…</Meta>}
@@ -134,6 +141,7 @@ export function TimezoneField({
         // "we think you are somewhere else" is not actionable and "your
         // clock says Toronto, your location says Riyadh" is.
         <div
+          role="status"
           className="flex flex-col gap-3 rounded-md border p-3"
           style={{ borderColor: 'var(--flag)' }}
         >
@@ -141,9 +149,15 @@ export function TimezoneField({
             These do not match
           </Meta>
           <p className="text-sm text-(--muted)">
-            Your device clock says <span className="text-(--ink)">{deviceZone}</span>. Your location
-            says <span className="text-(--ink)">{suggested}</span>. A wrong zone here moves every
-            time this circle suggests, so it is worth getting right.
+            This form has you in <span className="text-(--ink)">{zone}</span>. Your location says{' '}
+            <span className="text-(--ink)">{suggested}</span>
+            {clockDiffers ? (
+              <>
+                , and your device clock says <span className="text-(--ink)">{deviceZone}</span>
+              </>
+            ) : null}
+            . A wrong zone here moves every time this circle suggests, so it is worth getting
+            right.
           </p>
           <div className="flex flex-wrap gap-3">
             <GhostButton type="button" onClick={() => setZone(suggested)}>
@@ -157,6 +171,10 @@ export function TimezoneField({
       ) : agrees ? (
         <Meta as="p" className="normal-case tracking-normal" style={{ color: 'var(--pulse)' }}>
           Your location agrees with this zone.
+        </Meta>
+      ) : dismissed ? (
+        <Meta as="p" className="normal-case tracking-normal">
+          Keeping {zone}, the zone you picked.
         </Meta>
       ) : reading.kind === 'error' ? (
         <Meta as="p" className="normal-case tracking-normal">
