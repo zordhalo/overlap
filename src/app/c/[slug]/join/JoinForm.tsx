@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Field, GhostButton, Meta, Pill, SlitFrame } from '@/components/ui';
+import { TimezoneField } from './TimezoneField';
 import type { GroupedZones } from '@/lib/zones';
 import { joinCircleAction } from '@/app/actions';
 
@@ -67,21 +68,14 @@ export function JoinForm({
   googleAvailable?: boolean;
 }) {
   // Computed once via useState's lazy initializer, not a render-time call —
-  // avoids recomputing (and re-diffing the <select>) on every re-render.
+  // avoids recomputing on every re-render. Kept separate from the starting
+  // value because TimezoneField needs to name the device's own claim when it
+  // disagrees with where the browser says it is.
+  const [deviceZone] = useState(detectTimezone);
   // A returning member's saved zone wins over browser detection: they may
   // have deliberately set something other than where their browser is.
-  const [defaultZone] = useState(() => existing?.timezone ?? detectTimezone());
+  const [defaultZone] = useState(() => existing?.timezone ?? deviceZone);
   const [calendarOpen, setCalendarOpen] = useState(false);
-
-  // The visitor's own zone may genuinely not be in the curated <select> list
-  // (zones.ts's fallback still resolves it server-side via zoneInfo, but a
-  // <select> needs a concrete <option> to select). Add it as an extra
-  // option rather than silently falling back to UTC, which would be wrong
-  // more often than it's right.
-  const extraOption = useMemo(() => {
-    const known = zoneGroups.some((g) => g.zones.some((z) => z.value === defaultZone));
-    return known ? null : defaultZone;
-  }, [zoneGroups, defaultZone]);
 
   const boundAction = joinCircleAction.bind(null, circleSlug);
 
@@ -98,34 +92,11 @@ export function JoinForm({
           defaultValue={existing?.name}
         />
 
-        <div className="flex flex-col gap-2">
-          <label htmlFor="timezone" className="meta">
-            Timezone
-          </label>
-          <select
-            id="timezone"
-            name="timezone"
-            required
-            defaultValue={defaultZone}
-            className="slit-input rounded-md px-3 py-2 text-(--ink)"
-          >
-            {extraOption && (
-              <option value={extraOption}>{extraOption} (detected)</option>
-            )}
-            {zoneGroups.map((group) => (
-              <optgroup key={group.region} label={group.region}>
-                {group.zones.map((z) => (
-                  <option key={z.value} value={z.value}>
-                    {z.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          <Meta as="p" className="normal-case tracking-normal">
-            Detected from your browser. Change it if you&apos;re somewhere temporary.
-          </Meta>
-        </div>
+        <TimezoneField
+          zoneGroups={zoneGroups}
+          defaultZone={defaultZone}
+          deviceZone={deviceZone}
+        />
       </SlitFrame>
 
       <SlitFrame className="flex flex-col gap-6 p-6">
