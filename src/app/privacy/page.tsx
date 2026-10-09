@@ -58,7 +58,7 @@ export default function PrivacyPage() {
             'Your display name, time zone, sleeping hours, and working hours.',
             'Start and end times of your busy periods, if you connect a calendar. Nothing else about those events.',
             'An email address, only if you choose to add one for recovering lost links.',
-            'Approximate coordinates of your time zone’s representative city, to place a marker on the globe. This is derived from the zone you picked, not from your device location.',
+            'Approximate coordinates of your time zone’s representative city, to place a marker on the globe. These are derived from the zone on your profile — never from your device’s own position.',
           ]}
         />
         <P>
@@ -73,7 +73,7 @@ export default function PrivacyPage() {
         <List
           items={[
             'Event titles, descriptions, attendees, locations, or any other calendar content. There is no column for them.',
-            'Your device location, IP-based location, or precise coordinates.',
+            'Your device location, IP-based location, or precise coordinates. If you let your browser check your location on the join form, the coordinates are turned into a time zone name on your own device and then discarded. Only the zone name is sent here, exactly as if you had picked it from the list.',
             'Passwords, since there are none.',
             'Analytics, advertising identifiers, or third-party trackers.',
           ]}
