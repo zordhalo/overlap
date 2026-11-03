@@ -1,5 +1,7 @@
 # Overlap
 
+[![MCP servers live](https://whobuildsagents.com/badge/advancelabs.dev.svg)](https://whobuildsagents.com/advancelabs.dev)
+
 **See your people's time zones on a globe, and get ranked meeting times when
 everyone is awake and free.**
 
